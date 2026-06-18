@@ -1,0 +1,50 @@
+{
+  "sampler": {
+    "corpus_sizes_tokens": {
+      "text": 587328
+    },
+    "alpha": 0.7
+  },
+  "checkpoint": {
+    "interval_seconds": 1000000000,
+    "rolling_slots": 3
+  },
+  "logging": {
+    "light_interval_batches": 5,
+    "deep_interval_batches": 20
+  },
+  "kill_criteria": {
+    "warmup_batches": 1000000000,
+    "std_collapse_threshold": 0.1,
+    "correlation_collapse_threshold": 0.95,
+    "cosine_collapse_threshold": 0.99,
+    "substrate_health_degradation_pct": 0.25,
+    "substrate_health_window": 5,
+    "dimensional_collapse_threshold_pct": 0.5,
+    "pilot_set_n": 10,
+    "stationary_deviation_pct": 0.5,
+    "trending_smoothing_window": 3,
+    "trending_warmup_n": 5,
+    "trending_smoothing_window_deep": 2,
+    "trending_warmup_n_deep": 2,
+    "loss_descent_window": 200,
+    "collapse_sustained_checkpoints": 3,
+    "dimensional_sustained_checkpoints": 5,
+    "substrate_health_baselines": null,
+    "stationary_baselines": null
+  },
+  "epoch": {
+    "max_epochs": 1,
+    "abort_continue_at_epoch_1": true,
+    "max_batches_per_epoch": 1000000000
+  },
+  "sampler_probabilities": {
+    "text": 1.0
+  },
+  "loss": {
+    "sigreg_lambd": 0.1,
+    "sigreg_knots": 17,
+    "sigreg_num_proj": 1024,
+    "context_fraction": 0.8
+  }
+}
