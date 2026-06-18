@@ -1,9 +1,12 @@
 # LuthiScope Metrics & Control Contract
 
-**Version:** 0.1 (draft)
+**Version:** 0.1.1 (draft)
 **Status:** Authoritative for Phase 1 (read paths). Control + event paths are
 *proposed* and require a matching change in the producer (LuthiModel) before they
 exist.
+**Changelog:** 0.1.1 (2026-06-17) — §2 corrected after independent code
+verification: documented the *actual* `_m9_head_step` record vs. the aspirational
+`CANONICAL_FIELDS`; §1 cadence note clarified for co-fire lines. 0.1 — initial.
 
 This document defines the **seam** between LuthiScope and the systems it
 observes and controls. LuthiScope is a read-only consumer of metric streams plus
@@ -97,8 +100,11 @@ Representation-spectrum diagnostics from an SVD of the latent covariance.
 | `log_sv_max` / `_min` / `_range` | float | Log-spectrum head/tail summary. |
 
 > **Consumer note:** A typical line has top-level + `light` + `substrate`. `deep`
-> appears on the deep cadence only. Render each panel from whichever lines carry
-> its block; do not interpolate across absent blocks.
+> appears on the deep cadence only. On a step that is a multiple of *both* cadence
+> intervals, a single line carries top-level + `light` + `substrate` + `deep`
+> together — `deep`-bearing lines are not separate from `light`-bearing ones.
+> Render each panel from whichever lines carry its block; do not interpolate across
+> absent blocks.
 
 ### Companion files (same run directory)
 
@@ -112,36 +118,61 @@ Representation-spectrum diagnostics from an SVD of the latent covariance.
 
 ## 2. Cognition vitals — `m9_action_log.jsonl`
 
-Written by `ActionLog` (`luthi/v2/m9/instrumentation.py`) from the M9 runner, one
-record per cognitive cycle (~10 Hz), line-buffered. The schema is **intentionally
-permissive** — the writer passes through whatever keys the caller provides — so
-consumers MUST treat the canonical field list as a target, not a guarantee.
+Written by `ActionLog` (`luthi/v2/m9/instrumentation.py`), line-buffered, JSONL.
+Currently written by `M9Trainer._m9_head_step` (`luthi/v2/m9/runner.py`), one
+record per training step — so the rate is governed by training throughput, **not a
+wall clock**. (The "~10 Hz cognitive cycle" is the *future* cadence once this loop
+runs live inside Sanctuary; do not assume 10 Hz today.) Filename is configurable
+(`action_log_filename`, default `m9_action_log.jsonl`), written into the run dir.
+The schema is **permissive** (the writer passes through whatever keys the caller
+provides), so treat every field as possibly-absent per §0.
 
-Canonical fields (per `ActionLog.CANONICAL_FIELDS`):
+> **Important — verified against `runner.py:764-798` (2026-06-17 contract review).**
+> `ActionLog` defines a `CANONICAL_FIELDS` *aspirational* list, but the **record the
+> runner actually writes today differs from it** and is the schema below. Do NOT
+> build panels against `CANONICAL_FIELDS` — several of its fields are never written
+> (see "Not currently written"), and two are renamed in the real record.
+
+### Actual record fields (as written by `_m9_head_step`)
 
 | Field | Type | Meaning |
 |---|---|---|
-| `cycle` | int | Cognitive cycle counter. |
+| `cycle` | int | Global step counter (`self.global_step`). |
+| `modality` | str | Modality for this step. |
 | `sim_counter` | int | MCTS simulation counter. |
-| `s_t_summary` | object | State summary (mean/norm of state). |
-| `candidate_actions_top_k` | list[object] | Top-K candidate actions considered. |
-| `chosen_action_summary` | any | The selected action → human-readable summary. |
-| `efe_breakdown` | object | `{c_eng, c_coh, c_con, c_truth, total}` — expected-free-energy components. |
-| `gamma` | float | Policy precision. |
+| `theta_version` | int | Living-weights version (staleness tracker). |
 | `delta_theta_norm` | float | ‖Δθ‖ — how much the living weights moved this cycle. The cognition-side "pulse." |
+| `s_t_summary` | object | `{mean, norm}` of the state vector. *(shape verified)* |
+| `best_action_summary` | object \| null | `{norm, dist_to_a_rest}` of the chosen action, or null. *(shape verified)* |
+| `gamma` | float | Policy precision. |
 | `v_s` | float | V(state) value estimate. |
-| `tree_stats` | object | `{size, root_visits, top_share}` search-tree stats. |
-| `mi_probe` | object | `{mi_latest, mi_median, mi_band_lower, mi_band_upper, mi_n_samples}` — mutual-information probe + running band. |
-| `sigreg_value` | float | SIGReg value from the loss module. |
+| `r_best` | float | Score of the best action. |
+| `tree_stats` | object | MCTS tree stats (`self.mcts.tree_stats()`). Sub-shape not yet verified. |
+| `mi_probe` | object | `{mi_latest, mi_median, mi_band_lower, mi_band_upper, mi_n_samples}`. *(shape verified)* |
 | `rest_selected` | bool | Rest action chosen over alternatives. |
 | `rest_defaulted` | bool | Planner found nothing better than rest. |
-| `kill_states` | object | `{kill_name → state}` current kill-criterion states. |
-| `staleness_snapshot` | object | StalenessManager snapshot. |
-| `preference_weight_snapshot` | object | Preference weights snapshot. |
-| `mask_summary` | any | self/world mask mean/norm. |
+| `external_silent_frac` | float | Fraction of the external channel silent. |
+| `internal_silent_frac` | float | Fraction of the internal channel silent. |
+| `k_m9_5_armed` | bool | Whether kill K-M9-5 is armed (`activity_bands.k_m9_5_armed()`). |
+| `staleness` | object | `self.staleness.snapshot()`. Sub-shape not yet verified. |
+| `activity_bands` | object | `self.activity_bands.snapshot()`. Sub-shape not yet verified. |
+| `delta_s_band` | object | `self.delta_s_band.snapshot()`. Sub-shape not yet verified. |
+| `kill_states` | object | `{kill_name → state}` current kill-criterion states. Sub-shape not yet verified. |
 
-Filename is configurable in the M9 runner (`action_log_filename`, default
-`m9_action_log.jsonl`), written into the run directory.
+> **"Sub-shape not yet verified"** fields come from `*.snapshot()` / `tree_stats()`
+> methods that were not read field-by-field in the 2026-06-17 review. The *top-level
+> record above is verified*; verify each nested shape against its producing method
+> before building a cognition panel that reads its internals.
+
+### Not currently written (in `CANONICAL_FIELDS` but absent from live records)
+
+`candidate_actions_top_k`, `chosen_action_summary` (real analogue: `best_action_summary`),
+`efe_breakdown`, `sigreg_value`, `staleness_snapshot` (real analogue: `staleness`),
+`preference_weight_snapshot`, `mask_summary`. A consumer keyed off any of these finds
+nothing today. Also: where an EFE breakdown *is* produced (the `select_action` return
+path), its keys are `{total, engagement_cost, coherence_cost, connection_cost,
+truthfulness_cost}` — not the `{c_eng, c_coh, c_con, c_truth, total}` the class
+comment suggests — and it is not written to this log.
 
 ---
 
