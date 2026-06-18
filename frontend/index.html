@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LuthiScope</title>
+  <link rel="stylesheet" href="/vendor/uPlot.min.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">LUTHI<span>SCOPE</span></div>
+    <div id="conn" class="conn offline">● OFFLINE</div>
+  </header>
+
+  <div id="layout">
+    <aside id="sidebar">
+      <div class="sidebar-head">STREAMS</div>
+      <ul id="stream-list"></ul>
+      <button id="refresh" title="Rescan runs directory">↻ rescan</button>
+    </aside>
+
+    <main id="main">
+      <div id="now-line">select a stream</div>
+      <div id="statstrip" class="statstrip"></div>
+      <div id="panels" class="panels"></div>
+    </main>
+  </div>
+
+  <script src="/vendor/uPlot.iife.min.js"></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -10,6 +10,8 @@
 *.db
 data/
 runs/
+demo_runs/
+.luthiscope/
 exports/
 
 # --- Python ---

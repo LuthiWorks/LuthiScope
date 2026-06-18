@@ -27,6 +27,16 @@ class JsonlFollower:
     def reset(self) -> None:
         self._offset = 0
 
+    def seek_to_end(self) -> None:
+        """Advance the offset to the current end of file, so a subsequent
+        read_new() returns only lines appended *after* this call. Used by the
+        live WebSocket so it streams new records rather than re-sending history.
+        """
+        try:
+            self._offset = self.path.stat().st_size
+        except FileNotFoundError:
+            self._offset = 0
+
     def read_new(self) -> list[dict]:
         """Records from lines completed since the last read.
 

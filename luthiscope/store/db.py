@@ -69,10 +69,12 @@ def _int(v) -> Optional[int]:
 
 
 class Store:
-    def __init__(self, path: Union[str, Path]):
+    def __init__(self, path: Union[str, Path], check_same_thread: bool = True):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.path))
+        # check_same_thread=False lets the server share one connection across
+        # FastAPI's threadpool workers; callers must serialize writes with a lock.
+        self.conn = sqlite3.connect(str(self.path), check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.executescript(SCHEMA)
@@ -187,3 +189,8 @@ class Store:
     def list_runs(self) -> list[dict]:
         cur = self.conn.execute("SELECT run_id, kind, source_path FROM runs ORDER BY run_id")
         return [dict(r) for r in cur.fetchall()]
+
+    def count(self, run_id: str, kind: str) -> int:
+        table = "training_records" if kind == TRAINING else "cognition_records"
+        cur = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE run_id=?", (run_id,))
+        return int(cur.fetchone()[0])
