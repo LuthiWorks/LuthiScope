@@ -29,13 +29,15 @@ html, body {
   font-family: var(--sans); font-size: 13px;
 }
 
-/* fluid background canvas — oversized so the blur has no hard edges */
+/* fluid background canvas — sits behind content (z-index 0) but above the page
+   background; content layers are given z-index 1 so they paint on top. */
 #bg {
-  position: fixed; top: -5%; left: -5%; width: 110%; height: 110%;
-  z-index: -1; pointer-events: none; filter: blur(48px);
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none;
 }
 
 #topbar {
+  position: relative; z-index: 1;
   display: flex; align-items: center; justify-content: space-between;
   padding: 9px 16px;
   background: var(--glass-strong);
@@ -59,7 +61,7 @@ html, body {
 .conn.live { color: var(--c-opt); text-shadow: 0 0 10px rgba(59,130,246,.5); }
 .conn.offline { color: var(--ink-faint); }
 
-#layout { display: flex; height: calc(100% - 43px); }
+#layout { position: relative; z-index: 1; display: flex; height: calc(100% - 43px); }
 
 #sidebar {
   width: 248px; flex: 0 0 248px; overflow-y: auto; padding: 12px;
