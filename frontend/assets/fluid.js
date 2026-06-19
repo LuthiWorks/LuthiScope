@@ -44,12 +44,12 @@
   // bounce off the walls, lose speed to friction, deposit dye + velocity along the
   // path, and disappear once they slow to a stop (the dye then fades on its own).
   const objects = [];
-  const FRICTION = 0.99;       // momentum decay per frame
+  const FRICTION = 0.994;      // momentum decay per frame (closer to 1 = coasts farther)
   const RESTITUTION = 0.85;    // speed kept per wall bounce
-  const STOP_SPEED = 0.5;      // px/frame; below this the object stops
-  const MAX_OBJECTS = 16;
-  const OBJ_VEL_SCALE = 35;    // object speed -> injected fluid velocity
-  const OBJ_AMT = 80;          // dye deposited per frame along the path
+  const STOP_SPEED = 0.6;      // px/frame; below this the object stops
+  const MAX_OBJECTS = 10;
+  const OBJ_VEL_SCALE = 0.2;   // wake speed as a fraction of the object's speed (~1/3)
+  const OBJ_AMT = 55;          // dye deposited per frame along the path
 
   function resize() {
     Wpx = canvas.width = window.innerWidth;
@@ -181,7 +181,7 @@
 
   function spawnFromEdge() {
     const edge = (Math.random() * 4) | 0;
-    const speed = 6 + Math.random() * 6;                 // px/frame initial momentum
+    const speed = 16 + Math.random() * 10;               // px/frame initial momentum
     const drift = (Math.random() * 2 - 1) * speed * 0.5; // angle off the normal
     if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift);        // left
     else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift); // right
@@ -239,7 +239,7 @@
 
   function step() {
     u0.fill(0); v0.fill(0); dens0.fill(0);
-    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 90 + ((Math.random() * 180) | 0); } // ~3-9s
+    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 150 + ((Math.random() * 300) | 0); } // ~5-15s
     updateObjects();
     frame++;
     velStep();
@@ -259,7 +259,7 @@
   window.addEventListener("resize", resize);
   // click anywhere: launch an object in a random direction from the cursor
   window.addEventListener("mousedown", (e) => {
-    const speed = 7 + Math.random() * 6;
+    const speed = 16 + Math.random() * 10;
     const ang = Math.random() * Math.PI * 2;
     spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed);
   });
