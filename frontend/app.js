@@ -347,10 +347,68 @@ window.addEventListener("resize", () => {
   }, 120);
 });
 
+// ---- settings panel ----
+const SETTINGS_SCHEMA = [
+  { cat: "Background Simulation" },
+  { type: "checkbox", key: "enabled", label: "Enabled" },
+  { type: "select", key: "quality", label: "Quality", parse: Number,
+    options: [["64", "Low"], ["96", "Medium"], ["128", "High"]] },
+  { type: "select", key: "palette", label: "Palette",
+    options: [["aurora", "Aurora"], ["ember", "Ember"], ["ice", "Ice"], ["spectrum", "Spectrum"], ["mono", "Mono"]] },
+  { type: "range", key: "intensity", label: "Intensity", min: 0.3, max: 2, step: 0.1 },
+  { type: "range", key: "trail", label: "Trail length", min: 0.95, max: 0.996, step: 0.002 },
+  { type: "range", key: "clickCount", label: "Objects per click", min: 1, max: 5, step: 1, parse: Number },
+  { type: "range", key: "autoObjects", label: "Continuous objects", min: 0, max: 5, step: 1, parse: Number, note: "0 = off" },
+  { type: "range", key: "edgeEmit", label: "Edge emitters", min: 0, max: 4, step: 1, parse: Number, note: "0 = off" },
+  { type: "checkbox", key: "cursorEmit", label: "Cursor emits fluid" },
+];
+
+function buildSettings() {
+  const panel = $("settings-panel");
+  if (!panel || !window.LuthiBG) return;
+  const cfg = window.LuthiBG.cfg;
+  let html = `<div class="settings-head">SETTINGS<button id="settings-close">✕</button></div>`;
+  for (const it of SETTINGS_SCHEMA) {
+    if (it.cat) { html += `<div class="settings-cat">${it.cat}</div>`; continue; }
+    const val = cfg[it.key];
+    if (it.type === "checkbox") {
+      html += `<label class="set-row"><span>${it.label}</span><input type="checkbox" data-key="${it.key}" ${val ? "checked" : ""}></label>`;
+    } else if (it.type === "select") {
+      const opts = it.options.map(([v, l]) => `<option value="${v}" ${String(val) === String(v) ? "selected" : ""}>${l}</option>`).join("");
+      html += `<label class="set-row"><span>${it.label}</span><select data-key="${it.key}">${opts}</select></label>`;
+    } else if (it.type === "range") {
+      html += `<div class="set-row col"><div class="set-rowtop"><span>${it.label}${it.note ? ` <em>${it.note}</em>` : ""}</span><b data-val="${it.key}">${val}</b></div>` +
+              `<input type="range" data-key="${it.key}" min="${it.min}" max="${it.max}" step="${it.step}" value="${val}"></div>`;
+    }
+  }
+  panel.innerHTML = html;
+  panel.querySelectorAll("[data-key]").forEach((el) => {
+    const key = el.dataset.key;
+    const meta = SETTINGS_SCHEMA.find((s) => s.key === key);
+    const apply = () => {
+      let v;
+      if (el.type === "checkbox") v = el.checked;
+      else if (el.type === "range") v = meta.parse ? meta.parse(el.value) : parseFloat(el.value);
+      else v = meta.parse ? meta.parse(el.value) : el.value;
+      window.LuthiBG.set(key, v);
+      const disp = panel.querySelector(`[data-val="${key}"]`);
+      if (disp) disp.textContent = v;
+    };
+    el.addEventListener(el.type === "range" ? "input" : "change", apply);
+  });
+  $("settings-close").onclick = () => panel.classList.remove("open");
+}
+
 $("refresh").onclick = loadStreams;
 const bgBtn = $("bg-toggle");
 if (bgBtn) bgBtn.onclick = () => {
   const on = window.LuthiBG ? window.LuthiBG.toggle() : false;
   bgBtn.style.color = on ? "" : "var(--ink-faint)";
+};
+const sBtn = $("settings-btn");
+if (sBtn) sBtn.onclick = () => {
+  const panel = $("settings-panel");
+  if (!panel.classList.contains("open")) buildSettings();
+  panel.classList.toggle("open");
 };
 loadStreams();
