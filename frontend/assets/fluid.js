@@ -37,7 +37,7 @@
   const offctx = off.getContext("2d");
   const img = offctx.createImageData(N, N);
 
-  let Wpx = 0, Hpx = 0, userPaused = false, lastT = 0, frame = 0, nextEdge = 30;
+  let Wpx = 0, Hpx = 0, userPaused = false, lastT = 0, active = false, idleFrames = 0;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // traveling dye "objects": spawn at an edge (or on click), travel with momentum,
@@ -53,6 +53,7 @@
   const MAX_OBJECTS = 10;
   const OBJ_VEL_SCALE = 0.2;   // wake speed as a fraction of the object's speed (~1/3)
   const OBJ_AMT = 45;          // dye deposited per frame along the path
+  const COOLDOWN = 180;        // frames to keep solving after the last object (lets dye fade)
 
   function resize() {
     Wpx = canvas.width = window.innerWidth;
@@ -182,15 +183,7 @@
     objects.push({ x, y, vx, vy });
   }
 
-  function spawnFromEdge() {
-    const edge = (Math.random() * 4) | 0;
-    const speed = 24 + Math.random() * 8;                // px/frame initial momentum
-    const drift = (Math.random() * 2 - 1) * speed * 0.5; // angle off the normal
-    if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift);        // left
-    else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift); // right
-    else if (edge === 2) spawnObject(Math.random() * Wpx, 0, drift, speed);    // top
-    else spawnObject(Math.random() * Wpx, Hpx, drift, -speed);                 // bottom
-  }
+  // (edge auto-spawning removed — objects now spawn only on click, to save CPU)
 
   function updateObjects() {
     for (let k = objects.length - 1; k >= 0; k--) {
@@ -244,39 +237,43 @@
 
   function step() {
     u0.fill(0); v0.fill(0); dens0.fill(0);
-    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 240 + ((Math.random() * 360) | 0); } // ~8-20s
     updateObjects();
-    frame++;
+    idleFrames = objects.length > 0 ? COOLDOWN : idleFrames - 1;
     velStep();
     densStep();
     render();
   }
 
   const animating = () => !userPaused && !document.hidden && !reduced;
+  const hasWork = () => objects.length > 0 || idleFrames > 0;
 
   function loop(t) {
-    if (!animating()) return;
+    if (!animating() || !hasWork()) { active = false; return; }  // idle: stop solving
     if (t - lastT >= 33) { lastT = t; step(); }
     requestAnimationFrame(loop);
   }
-  function kick() { if (animating()) requestAnimationFrame(loop); }
+  function start() {
+    if (active || !animating() || !hasWork()) return;
+    active = true; lastT = 0; requestAnimationFrame(loop);
+  }
+  function kick() { start(); }   // only resumes if there is actually work to do
 
-  window.addEventListener("resize", resize);
   // click anywhere: launch an object in a random direction from the cursor
   window.addEventListener("mousedown", (e) => {
     const speed = 24 + Math.random() * 8;
     const ang = Math.random() * Math.PI * 2;
     spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed);
+    idleFrames = COOLDOWN;
+    start();   // wake the solver
   });
+  window.addEventListener("resize", () => { resize(); if (!active) render(); });
   document.addEventListener("visibilitychange", kick);
 
   resize();
-  spawnFromEdge();   // one object to start
-  step();
-  if (!reduced) requestAnimationFrame(loop);
+  render();   // one static dark frame; the solver stays idle (~0 CPU) until you click
 
   window.LuthiBG = {
-    toggle() { userPaused = !userPaused; if (!userPaused) { lastT = 0; kick(); } return !userPaused; },
-    isRunning: () => animating(),
+    toggle() { userPaused = !userPaused; if (!userPaused) start(); return !userPaused; },
+    isRunning: () => active,
   };
 })();
