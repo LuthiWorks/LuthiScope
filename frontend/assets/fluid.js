@@ -44,12 +44,15 @@
   // bounce off the walls, lose speed to friction, deposit dye + velocity along the
   // path, and disappear once they slow to a stop (the dye then fades on its own).
   const objects = [];
-  const FRICTION = 0.994;      // momentum decay per frame (closer to 1 = coasts farther)
-  const RESTITUTION = 0.85;    // speed kept per wall bounce
-  const STOP_SPEED = 0.6;      // px/frame; below this the object stops
+  // Linear deceleration (constant momentum loss/frame) gives an even spread of
+  // bumps. Lifetime ~= v0/DECEL frames; distance ~= v0*lifetime/2. At ~30fps,
+  // v0~27 and DECEL~0.03 => ~30s coast, ~6-7 edge-to-edge traversals.
+  const DECEL = 0.03;          // px/frame^2 deceleration
+  const RESTITUTION = 0.98;    // nearly elastic so the 6-7 bounces don't sap momentum
+  const STOP_SPEED = 0.05;     // px/frame; below this the object is done
   const MAX_OBJECTS = 10;
   const OBJ_VEL_SCALE = 0.2;   // wake speed as a fraction of the object's speed (~1/3)
-  const OBJ_AMT = 55;          // dye deposited per frame along the path
+  const OBJ_AMT = 45;          // dye deposited per frame along the path
 
   function resize() {
     Wpx = canvas.width = window.innerWidth;
@@ -181,7 +184,7 @@
 
   function spawnFromEdge() {
     const edge = (Math.random() * 4) | 0;
-    const speed = 16 + Math.random() * 10;               // px/frame initial momentum
+    const speed = 24 + Math.random() * 8;                // px/frame initial momentum
     const drift = (Math.random() * 2 - 1) * speed * 0.5; // angle off the normal
     if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift);        // left
     else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift); // right
@@ -197,13 +200,15 @@
       else if (o.x > Wpx) { o.x = Wpx; o.vx = -o.vx * RESTITUTION; }
       if (o.y < 0) { o.y = 0; o.vy = -o.vy * RESTITUTION; }
       else if (o.y > Hpx) { o.y = Hpx; o.vy = -o.vy * RESTITUTION; }
-      o.vx *= FRICTION; o.vy *= FRICTION;
+      const sp = Math.hypot(o.vx, o.vy);
+      const ns = sp - DECEL;                 // constant deceleration
+      if (ns <= STOP_SPEED) { objects.splice(k, 1); continue; }
+      o.vx = o.vx / sp * ns; o.vy = o.vy / sp * ns;
       const gx = Math.max(1, Math.min(N, Math.round((o.x / Wpx) * N)));
       const gy = Math.max(1, Math.min(N, Math.round((o.y / Hpx) * N)));
       const du = (o.vx / Wpx) * N * OBJ_VEL_SCALE;
       const dv = (o.vy / Hpx) * N * OBJ_VEL_SCALE;
       inject(gx, gy, du, dv, OBJ_AMT, 2);
-      if (Math.hypot(o.vx, o.vy) < STOP_SPEED) objects.splice(k, 1);
     }
   }
 
@@ -239,7 +244,7 @@
 
   function step() {
     u0.fill(0); v0.fill(0); dens0.fill(0);
-    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 150 + ((Math.random() * 300) | 0); } // ~5-15s
+    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 240 + ((Math.random() * 360) | 0); } // ~8-20s
     updateObjects();
     frame++;
     velStep();
@@ -259,7 +264,7 @@
   window.addEventListener("resize", resize);
   // click anywhere: launch an object in a random direction from the cursor
   window.addEventListener("mousedown", (e) => {
-    const speed = 16 + Math.random() * 10;
+    const speed = 24 + Math.random() * 8;
     const ang = Math.random() * Math.PI * 2;
     spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed);
   });
