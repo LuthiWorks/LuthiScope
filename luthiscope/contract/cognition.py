@@ -36,6 +36,19 @@ class MIProbe(_Lenient):
     mi_n_samples: Optional[int] = None
 
 
+class EFEBreakdown(_Lenient):
+    """Expected-free-energy components — the closest native affect-adjacent
+    structure (what the agent is drawn to / avoiding). Produced by the
+    select_action path; NOT written to the action log by the current runner
+    (contract §2) — a small producer-side emit is needed to populate it live.
+    Field names mirror the select_action return."""
+    total: Optional[float] = None
+    engagement_cost: Optional[float] = None
+    coherence_cost: Optional[float] = None
+    connection_cost: Optional[float] = None
+    truthfulness_cost: Optional[float] = None
+
+
 class CognitionRecord(_Lenient):
     cycle: Optional[int] = None
     modality: Optional[str] = None
@@ -47,6 +60,7 @@ class CognitionRecord(_Lenient):
     gamma: Optional[float] = None
     v_s: Optional[float] = None
     r_best: Optional[float] = None
+    efe_breakdown: Optional[EFEBreakdown] = None  # affect-adjacent; see contract §2
     tree_stats: Optional[dict[str, Any]] = None  # sub-shape not yet verified
     mi_probe: Optional[MIProbe] = None
     rest_selected: Optional[bool] = None

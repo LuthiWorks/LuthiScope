@@ -1,45 +1,46 @@
 "use strict";
 
-// ---- palette (mirrors styles.css) ----
+// identity palette for distinguishing series (bright on white)
 const C = {
-  green: "#39ff9e", cyan: "#2ee6d6", amber: "#ffb000",
-  violet: "#b08cff", red: "#ff5a6a", dim: "#4a7d72",
+  blue: "#2563eb", teal: "#0891b2", green: "#16a34a",
+  purple: "#7c3aed", orange: "#ea580c", red: "#dc2626", gray: "#94a3b8",
 };
 
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 
-// ---- per-patient panel + stat configuration ----
+// each series declares which direction is "healthy" so momentum can be colored
+// (good: "up" | "down" | null). null = no health claim (ambiguous metric).
 const PANELS = {
   training: {
     x: (r) => num(r.step),
     xlabel: "step",
     stats: [
-      { k: "STEP", get: (r) => r.step, fmt: (v) => v, glow: true },
+      { k: "STEP", get: (r) => r.step, fmt: (v) => v },
       { k: "LOSS", get: (r) => r.loss, fmt: f3 },
       { k: "STD p5", get: (r) => r.light?.online_std_p5, fmt: f3 },
       { k: "PRED_FROB", get: (r) => r.substrate?.pred_frob, fmt: f3 },
       { k: "EFF_RANK", get: (r) => r.deep?.effective_rank, fmt: f2 },
-      { k: "ELAPSED h", get: (r) => (r.elapsed_seconds ?? null), fmt: (v) => v == null ? "--" : (v / 3600).toFixed(2), dim: true },
+      { k: "ELAPSED h", get: (r) => r.elapsed_seconds, fmt: (v) => v == null ? "--" : (v / 3600).toFixed(2), dim: true },
     ],
     panels: [
       { title: "LOSS", series: [
-        { label: "loss", color: C.green, get: (r) => num(r.loss) },
-        { label: "l_pred", color: C.cyan, get: (r) => num(r.l_pred) },
-        { label: "l_sigreg", color: C.amber, get: (r) => num(r.l_sigreg) },
+        { label: "loss", color: C.blue, good: "down", get: (r) => num(r.loss) },
+        { label: "l_pred", color: C.teal, good: "down", get: (r) => num(r.l_pred) },
+        { label: "l_sigreg", color: C.purple, good: "down", get: (r) => num(r.l_sigreg) },
       ]},
       { title: "VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE", series: [
-        { label: "std_p5", color: C.green, get: (r) => num(r.light?.online_std_p5) },
-        { label: "std_p50", color: C.cyan, get: (r) => num(r.light?.online_std_p50) },
-        { label: "std_p95", color: C.dim, get: (r) => num(r.light?.online_std_p95) },
-        { label: "triv_cos", color: C.red, get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
+        { label: "std_p5", color: C.green, good: "up", get: (r) => num(r.light?.online_std_p5) },
+        { label: "std_p50", color: C.teal, good: "up", get: (r) => num(r.light?.online_std_p50) },
+        { label: "std_p95", color: C.gray, good: "up", get: (r) => num(r.light?.online_std_p95) },
+        { label: "triv_cos", color: C.red, good: "down", get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
       ]},
       { title: "SUBSTRATE PULSE", series: [
-        { label: "pred_frob", color: C.green, get: (r) => num(r.substrate?.pred_frob) },
-        { label: "err_acc", color: C.amber, get: (r) => num(r.substrate?.err_acc) },
+        { label: "pred_frob", color: C.green, good: "up", get: (r) => num(r.substrate?.pred_frob) },
+        { label: "err_acc", color: C.orange, good: "down", get: (r) => num(r.substrate?.err_acc) },
       ]},
       { title: "DIMENSION · RANK (deep cadence — sparse)", sparse: true, series: [
-        { label: "eff_rank", color: C.cyan, get: (r) => num(r.deep?.effective_rank) },
-        { label: "stable_rank", color: C.violet, get: (r) => num(r.deep?.stable_rank) },
+        { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
+        { label: "stable_rank", color: C.purple, good: "up", get: (r) => num(r.deep?.stable_rank) },
       ]},
     ],
   },
@@ -47,28 +48,35 @@ const PANELS = {
     x: (r) => num(r.cycle),
     xlabel: "cycle",
     stats: [
-      { k: "CYCLE", get: (r) => r.cycle, fmt: (v) => v, glow: true },
-      { k: "GAMMA", get: (r) => r.gamma, fmt: f3 },
-      { k: "V(s)", get: (r) => r.v_s, fmt: f3 },
+      { k: "CYCLE", get: (r) => r.cycle, fmt: (v) => v },
+      { k: "PRECISION γ", get: (r) => r.gamma, fmt: f3 },
+      { k: "VALUE V(s)", get: (r) => r.v_s, fmt: f3 },
+      { k: "EFE", get: (r) => r.efe_breakdown?.total, fmt: f3 },
       { k: "||Δθ||", get: (r) => r.delta_theta_norm, fmt: f4 },
-      { k: "MI", get: (r) => r.mi_probe?.mi_latest, fmt: f3 },
       { k: "REST", get: (r) => r.rest_selected, fmt: (v) => (v ? "YES" : "no"), dim: true },
     ],
     panels: [
-      { title: "VALUE / PRECISION", series: [
-        { label: "v_s", color: C.green, get: (r) => num(r.v_s) },
-        { label: "gamma", color: C.amber, get: (r) => num(r.gamma) },
+      { title: "INTERNAL STATE · PRECISION & VALUE (active-inference correlates)", series: [
+        { label: "v_s", color: C.green, good: "up", get: (r) => num(r.v_s) },
+        { label: "gamma", color: C.purple, good: null, get: (r) => num(r.gamma) },
+      ]},
+      { title: "EXPECTED FREE ENERGY · affect-adjacent (lower = better)", series: [
+        { label: "total", color: C.blue, good: "down", get: (r) => num(r.efe_breakdown?.total) },
+        { label: "engagement", color: C.teal, good: "down", get: (r) => num(r.efe_breakdown?.engagement_cost) },
+        { label: "coherence", color: C.purple, good: "down", get: (r) => num(r.efe_breakdown?.coherence_cost) },
+        { label: "connection", color: C.orange, good: "down", get: (r) => num(r.efe_breakdown?.connection_cost) },
+        { label: "truthfulness", color: C.green, good: "down", get: (r) => num(r.efe_breakdown?.truthfulness_cost) },
       ]},
       { title: "PLASTICITY PULSE · ||Δθ||", series: [
-        { label: "delta_theta", color: C.cyan, get: (r) => num(r.delta_theta_norm) },
+        { label: "delta_theta", color: C.teal, good: null, get: (r) => num(r.delta_theta_norm) },
       ]},
       { title: "MUTUAL INFORMATION + BAND", series: [
-        { label: "mi", color: C.green, get: (r) => num(r.mi_probe?.mi_latest) },
-        { label: "band_lo", color: C.dim, get: (r) => num(r.mi_probe?.mi_band_lower) },
-        { label: "band_hi", color: C.dim, get: (r) => num(r.mi_probe?.mi_band_upper) },
+        { label: "mi", color: C.green, good: "up", get: (r) => num(r.mi_probe?.mi_latest) },
+        { label: "band_lo", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_lower) },
+        { label: "band_hi", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_upper) },
       ]},
       { title: "BEST-ACTION VALUE · r_best", series: [
-        { label: "r_best", color: C.violet, get: (r) => num(r.r_best) },
+        { label: "r_best", color: C.blue, good: "up", get: (r) => num(r.r_best) },
       ]},
     ],
   },
@@ -78,7 +86,6 @@ function f2(v){ return v==null?"--":Number(v).toFixed(2); }
 function f3(v){ return v==null?"--":Number(v).toFixed(3); }
 function f4(v){ return v==null?"--":Number(v).toFixed(4); }
 
-// compact number for tooltip + readout
 function g(v){
   if (v==null || !isFinite(v)) return "--";
   const a = Math.abs(v);
@@ -87,7 +94,6 @@ function g(v){
 }
 function gint(v){ return v==null?"--":(Number.isInteger(v)?String(v):String(+v.toPrecision(6))); }
 
-// summary statistics for a series (nulls ignored)
 function seriesStats(ys){
   const v = ys.filter((y) => y != null && isFinite(y));
   if (!v.length) return null;
@@ -95,16 +101,26 @@ function seriesStats(ys){
   for (const y of v) { if (y < min) min = y; if (y > max) max = y; sum += y; }
   const mean = sum / v.length;
   let varr = 0; for (const y of v) varr += (y - mean) ** 2;
-  const std = Math.sqrt(varr / v.length);
   const start = v[0], end = v[v.length - 1];
   const dpct = start !== 0 ? ((end - start) / Math.abs(start)) * 100 : null;
-  return { start, end, min, max, range: max - min, std, dpct, n: v.length };
+  return { start, end, min, max, range: max - min, std: Math.sqrt(varr / v.length), dpct, n: v.length };
+}
+
+// polarity-aware health/momentum: blue(opt) green(good) yellow(warn) orange(near) red(bad)
+function momentumClass(st, good){
+  if (!st || st.dpct == null || good == null) return "neutral";
+  const improving = good === "up" ? st.end > st.start : st.end < st.start;
+  const m = Math.abs(st.dpct);
+  if (improving) return m >= 10 ? "opt" : "good";
+  if (m < 5) return "warn";
+  if (m < 15) return "near";
+  return "bad";
 }
 
 // ---- app state ----
 let records = [];
-let charts = [];        // {u, spec}
-let current = null;     // {id, kind}
+let charts = [];
+let current = null;
 let ws = null;
 
 const $ = (id) => document.getElementById(id);
@@ -115,17 +131,15 @@ function setConn(state, text) {
   el.textContent = "● " + text;
 }
 
-// ---- charts ----
 function axisStyle() {
   return {
-    stroke: C.dim,
-    grid: { stroke: "#11201f", width: 1 },
-    ticks: { stroke: "#11201f", width: 1 },
+    stroke: "#64748b",
+    grid: { stroke: "#eef2f6", width: 1 },
+    ticks: { stroke: "#e2e8f0", width: 1 },
     font: "11px monospace",
   };
 }
 
-// tooltip that follows the cursor, showing each series value at the hovered x
 function tooltipPlugin(xlabel) {
   let tip;
   return {
@@ -166,20 +180,17 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
     spec.series.map((s) => ({
       label: s.label,
       stroke: s.color,
-      width: 1.6,
-      points: { show: !!spec.sparse, size: 5, stroke: s.color, fill: s.color },
+      width: 1.8,
+      points: { show: !!spec.sparse, size: 6, stroke: s.color, fill: s.color },
     }))
   );
   const opts = {
     width: widthPx,
     height: 200,
     scales: { x: { time: false } },
-    axes: [
-      Object.assign(axisStyle(), { label: xlabel }),
-      axisStyle(),
-    ],
+    axes: [Object.assign(axisStyle(), { label: xlabel }), axisStyle()],
     series,
-    legend: { show: false },   // replaced by cursor tooltip + progression readout
+    legend: { show: false },
     cursor: { points: { size: 7 } },
     plugins: [tooltipPlugin(xlabel)],
   };
@@ -212,16 +223,14 @@ function buildPanels(kind) {
 }
 
 function panelWidth() {
-  // panels grid columns are minmax(440, 1fr); approximate the column width.
   const host = $("panels");
   const w = host.clientWidth;
-  const cols = Math.max(1, Math.floor(w / 460));
-  return Math.floor(w / cols) - 24;
+  const cols = Math.max(1, Math.floor(w / 480));
+  return Math.floor(w / cols) - 26;
 }
 
 function refreshData() {
   const cfg = PANELS[current.kind];
-  // only records with a finite x participate (x must be sorted numeric for uPlot)
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
   for (const { u, spec, readoutEl } of charts) {
@@ -242,8 +251,8 @@ function renderReadout(el, spec, seriesData) {
               `<span></span><span></span></div>`;
       return;
     }
-    const dir = st.end > st.start ? "up" : (st.end < st.start ? "down" : "flat");
-    const arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "–");
+    const arrow = st.end > st.start ? "▲" : (st.end < st.start ? "▼" : "–");
+    const cls = momentumClass(st, s.good);
     const dtxt = st.dpct == null ? arrow
       : `${arrow} ${st.dpct >= 0 ? "+" : ""}${st.dpct.toFixed(1)}%`;
     html +=
@@ -251,7 +260,7 @@ function renderReadout(el, spec, seriesData) {
         `<span class="ro-dot" style="background:${s.color}"></span>` +
         `<span class="ro-label">${s.label}</span>` +
         `<span class="ro-prog"><b>${g(st.start)}</b> → <b>${g(st.end)}</b></span>` +
-        `<span class="ro-delta ${dir}">${dtxt}</span>` +
+        `<span class="ro-delta ${cls}">${dtxt}</span>` +
         `<span class="ro-spread">min ${g(st.min)} · max ${g(st.max)} · σ ${g(st.std)} · rng ${g(st.range)}</span>` +
       `</div>`;
   });
@@ -272,7 +281,6 @@ function renderStats(cfg) {
   }
 }
 
-// ---- streams ----
 async function loadStreams() {
   const list = $("stream-list");
   list.innerHTML = "<li class='s-meta'>scanning…</li>";
@@ -290,8 +298,6 @@ async function loadStreams() {
   }
   for (const s of streams) {
     const li = document.createElement("li");
-    li.dataset.id = s.id;
-    li.dataset.kind = s.kind;
     li.innerHTML =
       `<div class="s-name">${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
       `<div class="s-meta">${s.n_records} records</div>`;
@@ -332,7 +338,6 @@ function openLive(id) {
   };
 }
 
-// ---- resize ----
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
@@ -342,6 +347,5 @@ window.addEventListener("resize", () => {
   }, 120);
 });
 
-// ---- boot ----
 $("refresh").onclick = loadStreams;
 loadStreams();
