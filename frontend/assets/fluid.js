@@ -37,9 +37,19 @@
   const offctx = off.getContext("2d");
   const img = offctx.createImageData(N, N);
 
-  let Wpx = 0, Hpx = 0, userPaused = false, lastT = 0, frame = 0;
+  let Wpx = 0, Hpx = 0, userPaused = false, lastT = 0, frame = 0, nextEdge = 30;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let mouse = { x: 0, y: 0, px: 0, py: 0, has: false };
+
+  // traveling dye "objects": spawn at an edge (or on click), travel with momentum,
+  // bounce off the walls, lose speed to friction, deposit dye + velocity along the
+  // path, and disappear once they slow to a stop (the dye then fades on its own).
+  const objects = [];
+  const FRICTION = 0.99;       // momentum decay per frame
+  const RESTITUTION = 0.85;    // speed kept per wall bounce
+  const STOP_SPEED = 0.5;      // px/frame; below this the object stops
+  const MAX_OBJECTS = 16;
+  const OBJ_VEL_SCALE = 35;    // object speed -> injected fluid velocity
+  const OBJ_AMT = 80;          // dye deposited per frame along the path
 
   function resize() {
     Wpx = canvas.width = window.innerWidth;
@@ -164,27 +174,37 @@
     }
   }
 
-  function edgeJet() {
-    const edge = (Math.random() * 4) | 0;
-    const f = 18 + Math.random() * 14;     // inward force
-    const t = (Math.random() * 2 - 1) * 6; // tangential jitter
-    const amt = 120;
-    const p = 1 + ((Math.random() * N) | 0);
-    if (edge === 0) inject(2, p, f, t, amt, 2);        // left -> right
-    else if (edge === 1) inject(N - 1, p, -f, t, amt, 2); // right -> left
-    else if (edge === 2) inject(p, 2, t, f, amt, 2);   // top -> down
-    else inject(p, N - 1, t, -f, amt, 2);              // bottom -> up
+  function spawnObject(x, y, vx, vy) {
+    if (objects.length >= MAX_OBJECTS) return;
+    objects.push({ x, y, vx, vy });
   }
 
-  function cursorInject() {
-    if (!mouse.has) return;
-    const gx = Math.max(1, Math.min(N, Math.round((mouse.x / Wpx) * N)));
-    const gy = Math.max(1, Math.min(N, Math.round((mouse.y / Hpx) * N)));
-    const du = ((mouse.x - mouse.px) / Wpx) * N * 4.0;
-    const dv = ((mouse.y - mouse.py) / Hpx) * N * 4.0;
-    mouse.px = mouse.x; mouse.py = mouse.y;
-    if (du === 0 && dv === 0) return;
-    inject(gx, gy, du, dv, 90, 2);
+  function spawnFromEdge() {
+    const edge = (Math.random() * 4) | 0;
+    const speed = 6 + Math.random() * 6;                 // px/frame initial momentum
+    const drift = (Math.random() * 2 - 1) * speed * 0.5; // angle off the normal
+    if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift);        // left
+    else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift); // right
+    else if (edge === 2) spawnObject(Math.random() * Wpx, 0, drift, speed);    // top
+    else spawnObject(Math.random() * Wpx, Hpx, drift, -speed);                 // bottom
+  }
+
+  function updateObjects() {
+    for (let k = objects.length - 1; k >= 0; k--) {
+      const o = objects[k];
+      o.x += o.vx; o.y += o.vy;
+      if (o.x < 0) { o.x = 0; o.vx = -o.vx * RESTITUTION; }
+      else if (o.x > Wpx) { o.x = Wpx; o.vx = -o.vx * RESTITUTION; }
+      if (o.y < 0) { o.y = 0; o.vy = -o.vy * RESTITUTION; }
+      else if (o.y > Hpx) { o.y = Hpx; o.vy = -o.vy * RESTITUTION; }
+      o.vx *= FRICTION; o.vy *= FRICTION;
+      const gx = Math.max(1, Math.min(N, Math.round((o.x / Wpx) * N)));
+      const gy = Math.max(1, Math.min(N, Math.round((o.y / Hpx) * N)));
+      const du = (o.vx / Wpx) * N * OBJ_VEL_SCALE;
+      const dv = (o.vy / Hpx) * N * OBJ_VEL_SCALE;
+      inject(gx, gy, du, dv, OBJ_AMT, 2);
+      if (Math.hypot(o.vx, o.vy) < STOP_SPEED) objects.splice(k, 1);
+    }
   }
 
   // --- render ---
@@ -219,8 +239,8 @@
 
   function step() {
     u0.fill(0); v0.fill(0); dens0.fill(0);
-    cursorInject();
-    if (frame % 18 === 0) edgeJet();   // ~ every 0.6s at 30fps
+    if (--nextEdge <= 0) { spawnFromEdge(); nextEdge = 90 + ((Math.random() * 180) | 0); } // ~3-9s
+    updateObjects();
     frame++;
     velStep();
     densStep();
@@ -237,15 +257,16 @@
   function kick() { if (animating()) requestAnimationFrame(loop); }
 
   window.addEventListener("resize", resize);
-  window.addEventListener("mousemove", (e) => {
-    if (!mouse.has) { mouse.px = e.clientX; mouse.py = e.clientY; }
-    mouse.x = e.clientX; mouse.y = e.clientY; mouse.has = true;
+  // click anywhere: launch an object in a random direction from the cursor
+  window.addEventListener("mousedown", (e) => {
+    const speed = 7 + Math.random() * 6;
+    const ang = Math.random() * Math.PI * 2;
+    spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed);
   });
   document.addEventListener("visibilitychange", kick);
 
   resize();
-  // seed a few jets so there's motion before the cursor moves
-  for (let k = 0; k < 4; k++) edgeJet();
+  spawnFromEdge();   // one object to start
   step();
   if (!reduced) requestAnimationFrame(loop);
 
