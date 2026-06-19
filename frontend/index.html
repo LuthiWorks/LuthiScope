@@ -9,9 +9,13 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <canvas id="bg"></canvas>
   <header id="topbar">
     <div class="brand"><img src="/assets/logo.png" alt="" class="brand-logo" />LUTHI<span>SCOPE</span></div>
-    <div id="conn" class="conn offline">● OFFLINE</div>
+    <div class="topbar-right">
+      <button id="bg-toggle" title="Toggle background animation">≈</button>
+      <div id="conn" class="conn offline">● OFFLINE</div>
+    </div>
   </header>
 
   <div id="layout">
@@ -28,6 +32,7 @@
     </main>
   </div>
 
+  <script src="/assets/fluid.js"></script>
   <script src="/vendor/uPlot.iife.min.js"></script>
   <script src="/app.js" defer></script>
 </body>

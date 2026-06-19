@@ -2,8 +2,8 @@
 
 // identity palette for distinguishing series (bright on white)
 const C = {
-  blue: "#2563eb", teal: "#0891b2", green: "#16a34a",
-  purple: "#7c3aed", orange: "#ea580c", red: "#dc2626", gray: "#94a3b8",
+  blue: "#3b82f6", teal: "#22d3ee", green: "#22c55e",
+  purple: "#a78bfa", orange: "#fb923c", red: "#f87171", gray: "#94a3b8",
 };
 
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -133,9 +133,9 @@ function setConn(state, text) {
 
 function axisStyle() {
   return {
-    stroke: "#64748b",
-    grid: { stroke: "#eef2f6", width: 1 },
-    ticks: { stroke: "#e2e8f0", width: 1 },
+    stroke: "#8492a8",
+    grid: { stroke: "rgba(255,255,255,0.06)", width: 1 },
+    ticks: { stroke: "rgba(255,255,255,0.10)", width: 1 },
     font: "11px monospace",
   };
 }
@@ -348,4 +348,9 @@ window.addEventListener("resize", () => {
 });
 
 $("refresh").onclick = loadStreams;
+const bgBtn = $("bg-toggle");
+if (bgBtn) bgBtn.onclick = () => {
+  const on = window.LuthiBG ? window.LuthiBG.toggle() : false;
+  bgBtn.style.color = on ? "" : "var(--ink-faint)";
+};
 loadStreams();
