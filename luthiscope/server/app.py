@@ -13,6 +13,7 @@ behind a separate, explicit API that does not exist yet.)
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 from pathlib import Path
 
@@ -25,7 +26,10 @@ from luthiscope.ingest.tailer import JsonlFollower
 from luthiscope.server.discovery import discover_streams, streams_map
 from luthiscope.store.db import COGNITION, TRAINING, Store
 
-FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+if getattr(sys, "frozen", False):  # running inside a PyInstaller bundle
+    FRONTEND_DIR = Path(sys._MEIPASS) / "frontend"  # type: ignore[attr-defined]
+else:
+    FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 LIVE_POLL_SECONDS = 0.5
 
 
@@ -93,6 +97,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # -- frontend --
     if (FRONTEND_DIR / "vendor").is_dir():
         app.mount("/vendor", StaticFiles(directory=FRONTEND_DIR / "vendor"), name="vendor")
+    if (FRONTEND_DIR / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
     @app.get("/app.js")
     def app_js():

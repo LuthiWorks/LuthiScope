@@ -28,8 +28,9 @@ html, body {
   border-bottom: 1px solid var(--panel-edge);
   background: linear-gradient(180deg, #08110f, #05080a);
 }
-.brand { letter-spacing: 4px; font-weight: 700; color: var(--ink); }
+.brand { display: flex; align-items: center; letter-spacing: 4px; font-weight: 700; color: var(--ink); }
 .brand span { color: var(--green); }
+.brand-logo { height: 22px; width: auto; margin-right: 10px; filter: drop-shadow(0 0 6px rgba(57,255,158,.25)); }
 .conn { font-size: 12px; letter-spacing: 1px; }
 .conn.online { color: var(--green); text-shadow: 0 0 8px rgba(57,255,158,.5); }
 .conn.offline { color: var(--ink-dim); }
@@ -90,8 +91,32 @@ html, body {
 }
 .panel-title { color: var(--ink-dim); letter-spacing: 2px; font-size: 11px; margin: 0 0 6px 2px; }
 
-/* uPlot dark legend */
-.u-legend { color: var(--ink-dim); font-size: 11px; }
-.u-legend .u-marker { width: 10px; height: 10px; }
-.u-legend th { font-weight: normal; }
-.u-legend .u-value { color: var(--ink); }
+/* legend is hidden in JS; values are shown at the cursor + summarized below */
+
+/* cursor tooltip (follows the mouse over a chart) */
+.u-tip {
+  position: absolute; z-index: 20; pointer-events: none;
+  background: rgba(6, 16, 18, .96); border: 1px solid var(--panel-edge);
+  border-radius: 5px; padding: 6px 8px; font-size: 11px; line-height: 1.5;
+  box-shadow: 0 4px 18px rgba(0,0,0,.6); white-space: nowrap;
+}
+.u-tip-x { color: var(--ink-dim); border-bottom: 1px solid var(--panel-edge); margin-bottom: 4px; padding-bottom: 3px; }
+.u-tip-row { color: var(--ink); }
+.u-tip-row b { color: #fff; }
+.u-tip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+/* progression readout (bottom of each panel) */
+.panel-readout { margin-top: 6px; border-top: 1px solid var(--panel-edge); padding-top: 6px; }
+.ro-row {
+  display: grid; grid-template-columns: 14px 84px minmax(110px, auto) 64px 1fr; gap: 8px;
+  align-items: baseline; font-size: 11px; padding: 2px 2px;
+}
+.ro-dot { width: 9px; height: 9px; border-radius: 50%; align-self: center; }
+.ro-label { color: var(--ink); }
+.ro-prog { color: var(--ink-dim); }
+.ro-prog b { color: var(--ink); }
+.ro-spread { color: var(--ink-dim); text-align: right; }
+.ro-delta { font-weight: 700; }
+.ro-delta.up { color: var(--green); }
+.ro-delta.down { color: var(--red); }
+.ro-delta.flat { color: var(--ink-dim); }

@@ -25,9 +25,20 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
 
 
 def main() -> None:
-    import uvicorn
+    import sys
 
     _load_dotenv()
+
+    # `--app` launches the desktop experience (native window if pywebview is
+    # installed, else the browser). Plain invocation runs the server only.
+    if "--app" in sys.argv:
+        from luthiscope.desktop import run_app
+
+        run_app()
+        return
+
+    import uvicorn
+
     from luthiscope.config import load_settings
     from luthiscope.server.app import create_app
 

@@ -78,6 +78,29 @@ function f2(v){ return v==null?"--":Number(v).toFixed(2); }
 function f3(v){ return v==null?"--":Number(v).toFixed(3); }
 function f4(v){ return v==null?"--":Number(v).toFixed(4); }
 
+// compact number for tooltip + readout
+function g(v){
+  if (v==null || !isFinite(v)) return "--";
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(2);
+  return String(+v.toPrecision(4));
+}
+function gint(v){ return v==null?"--":(Number.isInteger(v)?String(v):String(+v.toPrecision(6))); }
+
+// summary statistics for a series (nulls ignored)
+function seriesStats(ys){
+  const v = ys.filter((y) => y != null && isFinite(y));
+  if (!v.length) return null;
+  let min = v[0], max = v[0], sum = 0;
+  for (const y of v) { if (y < min) min = y; if (y > max) max = y; sum += y; }
+  const mean = sum / v.length;
+  let varr = 0; for (const y of v) varr += (y - mean) ** 2;
+  const std = Math.sqrt(varr / v.length);
+  const start = v[0], end = v[v.length - 1];
+  const dpct = start !== 0 ? ((end - start) / Math.abs(start)) * 100 : null;
+  return { start, end, min, max, range: max - min, std, dpct, n: v.length };
+}
+
 // ---- app state ----
 let records = [];
 let charts = [];        // {u, spec}
@@ -102,6 +125,42 @@ function axisStyle() {
   };
 }
 
+// tooltip that follows the cursor, showing each series value at the hovered x
+function tooltipPlugin(xlabel) {
+  let tip;
+  return {
+    hooks: {
+      init: (u) => {
+        tip = document.createElement("div");
+        tip.className = "u-tip";
+        tip.style.display = "none";
+        u.over.appendChild(tip);
+        u.over.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+      },
+      setCursor: (u) => {
+        const { idx, left, top } = u.cursor;
+        if (idx == null || left == null || left < 0) { tip.style.display = "none"; return; }
+        const xv = u.data[0][idx];
+        let html = `<div class="u-tip-x">${xlabel} ${gint(xv)}</div>`;
+        for (let si = 1; si < u.series.length; si++) {
+          const s = u.series[si];
+          const v = u.data[si][idx];
+          html += `<div class="u-tip-row"><span class="u-tip-dot" style="background:${s.stroke}"></span>` +
+                  `${s.label}: <b>${v == null ? "--" : g(v)}</b></div>`;
+        }
+        tip.innerHTML = html;
+        tip.style.display = "block";
+        const tw = tip.offsetWidth, th = tip.offsetHeight;
+        let lx = left + 14, ty = top + 14;
+        if (lx + tw > u.over.clientWidth) lx = left - tw - 14;
+        if (ty + th > u.over.clientHeight) ty = top - th - 14;
+        tip.style.left = Math.max(0, lx) + "px";
+        tip.style.top = Math.max(0, ty) + "px";
+      },
+    },
+  };
+}
+
 function makeChart(mountEl, spec, xlabel, widthPx) {
   const series = [{}].concat(
     spec.series.map((s) => ({
@@ -120,7 +179,9 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
       axisStyle(),
     ],
     series,
-    legend: { live: true },
+    legend: { show: false },   // replaced by cursor tooltip + progression readout
+    cursor: { points: { size: 7 } },
+    plugins: [tooltipPlugin(xlabel)],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
@@ -141,9 +202,12 @@ function buildPanels(kind) {
     panel.appendChild(title);
     const chartHost = document.createElement("div");
     panel.appendChild(chartHost);
+    const readoutEl = document.createElement("div");
+    readoutEl.className = "panel-readout";
+    panel.appendChild(readoutEl);
     host.appendChild(panel);
     const u = makeChart(chartHost, spec, cfg.xlabel, width);
-    charts.push({ u, spec });
+    charts.push({ u, spec, readoutEl });
   }
 }
 
@@ -160,11 +224,38 @@ function refreshData() {
   // only records with a finite x participate (x must be sorted numeric for uPlot)
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
-  for (const { u, spec } of charts) {
-    const data = [xs].concat(spec.series.map((s) => pts.map(s.get)));
-    u.setData(data);
+  for (const { u, spec, readoutEl } of charts) {
+    const seriesData = spec.series.map((s) => pts.map(s.get));
+    u.setData([xs].concat(seriesData));
+    renderReadout(readoutEl, spec, seriesData);
   }
   renderStats(cfg);
+}
+
+function renderReadout(el, spec, seriesData) {
+  let html = "";
+  spec.series.forEach((s, i) => {
+    const st = seriesStats(seriesData[i]);
+    if (!st) {
+      html += `<div class="ro-row"><span class="ro-dot" style="background:${s.color}"></span>` +
+              `<span class="ro-label">${s.label}</span><span class="ro-prog">no data</span>` +
+              `<span></span><span></span></div>`;
+      return;
+    }
+    const dir = st.end > st.start ? "up" : (st.end < st.start ? "down" : "flat");
+    const arrow = dir === "up" ? "▲" : (dir === "down" ? "▼" : "–");
+    const dtxt = st.dpct == null ? arrow
+      : `${arrow} ${st.dpct >= 0 ? "+" : ""}${st.dpct.toFixed(1)}%`;
+    html +=
+      `<div class="ro-row">` +
+        `<span class="ro-dot" style="background:${s.color}"></span>` +
+        `<span class="ro-label">${s.label}</span>` +
+        `<span class="ro-prog"><b>${g(st.start)}</b> → <b>${g(st.end)}</b></span>` +
+        `<span class="ro-delta ${dir}">${dtxt}</span>` +
+        `<span class="ro-spread">min ${g(st.min)} · max ${g(st.max)} · σ ${g(st.std)} · rng ${g(st.range)}</span>` +
+      `</div>`;
+  });
+  el.innerHTML = html;
 }
 
 function renderStats(cfg) {
