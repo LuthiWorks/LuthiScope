@@ -141,7 +141,47 @@ html, body {
 .stat .v { font-size: 23px; margin-top: 4px; font-family: var(--mono); color: var(--c-opt); text-shadow: 0 0 12px rgba(59,130,246,.25); }
 .stat .v.dim { color: var(--ink); text-shadow: none; }
 
-.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+.panels-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+
+/* metric groups */
+.group { margin-bottom: 18px; }
+.group-head { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 6px 2px 10px; user-select: none; }
+.group-title { color: var(--ink); font-weight: 700; letter-spacing: 1px; font-size: 12px; }
+.group-chev { margin-left: auto; color: var(--ink-faint); transition: transform .15s; }
+.group.collapsed .group-chev { transform: rotate(-90deg); }
+.group.collapsed .group-body { display: none; }
+.group-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-faint); }
+
+/* vitals overview tiles */
+.vtile {
+  flex: 1 1 130px; min-width: 130px; cursor: pointer;
+  background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--edge); border-radius: 9px; padding: 9px 12px; transition: border-color .15s;
+}
+.vtile:hover { border-color: var(--c-opt); }
+.vtile .k { color: var(--ink-dim); font-size: 10px; letter-spacing: 1px; font-weight: 700; }
+.vtile .v { font-size: 20px; margin-top: 4px; font-family: var(--mono); }
+
+/* health colors */
+.v.opt { color: var(--c-opt); }   .group-dot.opt { background: var(--c-opt); }
+.v.good { color: var(--c-good); }  .group-dot.good { background: var(--c-good); }
+.v.warn { color: var(--c-warn); }  .group-dot.warn { background: var(--c-warn); }
+.v.near { color: var(--c-near); }  .group-dot.near { background: var(--c-near); }
+.v.bad { color: var(--c-bad); }    .group-dot.bad { background: var(--c-bad); }
+.v.neutral { color: var(--ink); }  .group-dot.neutral { background: var(--ink-faint); }
+
+/* needs-attention bar */
+.attention {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px;
+  padding: 8px 12px; border-radius: 9px; border: 1px solid var(--c-near);
+  background: rgba(249,115,22,.10); font-size: 11px;
+}
+.att-head { color: var(--c-near); font-weight: 700; letter-spacing: 1px; }
+.att-item { font-family: var(--mono); padding: 1px 7px; border-radius: 4px; background: rgba(255,255,255,.05); }
+.att-item.warn { color: var(--c-warn); }
+.att-item.near { color: var(--c-near); }
+.att-item.bad { color: var(--c-bad); }
+
 .panel {
   border: 1px solid var(--edge); border-radius: 12px;
   background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);

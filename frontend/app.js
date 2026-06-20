@@ -10,73 +10,100 @@ const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 
 // each series declares which direction is "healthy" so momentum can be colored
 // (good: "up" | "down" | null). null = no health claim (ambiguous metric).
-const PANELS = {
+// Grouped metric config. Panels whose series have no data are auto-hidden, so the
+// "(when emitted)" panels below appear automatically once the producer starts
+// emitting those fields (see the shortlist in the metrics discussion).
+const GROUPS = {
   training: {
     x: (r) => num(r.step),
     xlabel: "step",
-    stats: [
-      { k: "STEP", get: (r) => r.step, fmt: (v) => v },
-      { k: "LOSS", get: (r) => r.loss, fmt: f3 },
-      { k: "STD p5", get: (r) => r.light?.online_std_p5, fmt: f3 },
-      { k: "PRED_FROB", get: (r) => r.substrate?.pred_frob, fmt: f3 },
-      { k: "EFF_RANK", get: (r) => r.deep?.effective_rank, fmt: f2 },
-      { k: "ELAPSED h", get: (r) => r.elapsed_seconds, fmt: (v) => v == null ? "--" : (v / 3600).toFixed(2), dim: true },
-    ],
-    panels: [
-      { title: "LOSS", series: [
-        { label: "loss", color: C.blue, good: "down", get: (r) => num(r.loss) },
-        { label: "l_pred", color: C.teal, good: "down", get: (r) => num(r.l_pred) },
-        { label: "l_sigreg", color: C.purple, good: "down", get: (r) => num(r.l_sigreg) },
+    groups: [
+      { title: "Learning", panels: [
+        { title: "LOSS", series: [
+          { label: "loss", color: C.blue, good: "down", get: (r) => num(r.loss) },
+          { label: "l_pred", color: C.teal, good: "down", get: (r) => num(r.l_pred) },
+          { label: "l_sigreg", color: C.purple, good: "down", get: (r) => num(r.l_sigreg) },
+        ]},
+        { title: "VALIDATION / PROBE (when emitted)", series: [
+          { label: "val_loss", color: C.blue, good: "down", get: (r) => num(r.val_loss) },
+          { label: "probe_acc", color: C.green, good: "up", get: (r) => num(r.probe_acc) },
+        ]},
       ]},
-      { title: "VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE", series: [
-        { label: "std_p5", color: C.green, good: "up", get: (r) => num(r.light?.online_std_p5) },
-        { label: "std_p50", color: C.teal, good: "up", get: (r) => num(r.light?.online_std_p50) },
-        { label: "std_p95", color: C.gray, good: "up", get: (r) => num(r.light?.online_std_p95) },
-        { label: "triv_cos", color: C.red, good: "down", get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
+      { title: "Optimization", panels: [
+        { title: "GRADIENT NORM (when emitted)", series: [
+          { label: "grad_norm", color: C.orange, good: null, get: (r) => num(r.grad_norm) },
+        ]},
+        { title: "LEARNING RATE (when emitted)", series: [
+          { label: "lr", color: C.teal, good: null, get: (r) => num(r.lr) },
+        ]},
       ]},
-      { title: "SUBSTRATE PULSE", series: [
-        { label: "pred_frob", color: C.green, good: "up", get: (r) => num(r.substrate?.pred_frob) },
-        { label: "err_acc", color: C.orange, good: "down", get: (r) => num(r.substrate?.err_acc) },
+      { title: "Substrate vitality", panels: [
+        { title: "SUBSTRATE PULSE", series: [
+          { label: "pred_frob", color: C.green, good: "up", get: (r) => num(r.substrate?.pred_frob) },
+          { label: "err_acc", color: C.orange, good: "down", get: (r) => num(r.substrate?.err_acc) },
+        ]},
+        { title: "DRIFT & PLASTICITY (when emitted)", series: [
+          { label: "set_point_drift", color: C.purple, good: null, get: (r) => num(r.substrate?.set_point_drift) },
+          { label: "update_rate", color: C.teal, good: null, get: (r) => num(r.substrate?.update_ema_mean) },
+        ]},
+        { title: "PRECISION (when emitted)", series: [
+          { label: "precision", color: C.blue, good: null, get: (r) => num(r.substrate?.precision_mean) },
+        ]},
       ]},
-      { title: "DIMENSION · RANK (deep cadence — sparse)", sparse: true, series: [
-        { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
-        { label: "stable_rank", color: C.purple, good: "up", get: (r) => num(r.deep?.stable_rank) },
+      { title: "Representation", panels: [
+        { title: "VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE", series: [
+          { label: "std_p5", color: C.green, good: "up", get: (r) => num(r.light?.online_std_p5) },
+          { label: "std_p50", color: C.teal, good: "up", get: (r) => num(r.light?.online_std_p50) },
+          { label: "std_p95", color: C.gray, good: "up", get: (r) => num(r.light?.online_std_p95) },
+          { label: "triv_cos", color: C.red, good: "down", get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
+        ]},
+        { title: "DIMENSION · RANK (deep cadence — sparse)", sparse: true, series: [
+          { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
+          { label: "stable_rank", color: C.purple, good: "up", get: (r) => num(r.deep?.stable_rank) },
+        ]},
+      ]},
+      { title: "Throughput", panels: [
+        { title: "TOKENS CONSUMED", series: [
+          { label: "tokens", color: C.green, good: "up", get: (r) => {
+            const t = r.tokens_consumed; if (!t) return null;
+            let s = 0; for (const k in t) { if (typeof t[k] === "number") s += t[k]; } return s;
+          } },
+        ]},
+        { title: "ELAPSED (hours)", series: [
+          { label: "elapsed_h", color: C.gray, good: null, get: (r) => num(r.elapsed_seconds) == null ? null : r.elapsed_seconds / 3600 },
+        ]},
       ]},
     ],
   },
   cognition: {
     x: (r) => num(r.cycle),
     xlabel: "cycle",
-    stats: [
-      { k: "CYCLE", get: (r) => r.cycle, fmt: (v) => v },
-      { k: "PRECISION γ", get: (r) => r.gamma, fmt: f3 },
-      { k: "VALUE V(s)", get: (r) => r.v_s, fmt: f3 },
-      { k: "EFE", get: (r) => r.efe_breakdown?.total, fmt: f3 },
-      { k: "||Δθ||", get: (r) => r.delta_theta_norm, fmt: f4 },
-      { k: "REST", get: (r) => r.rest_selected, fmt: (v) => (v ? "YES" : "no"), dim: true },
-    ],
-    panels: [
-      { title: "INTERNAL STATE · PRECISION & VALUE (active-inference correlates)", series: [
-        { label: "v_s", color: C.green, good: "up", get: (r) => num(r.v_s) },
-        { label: "gamma", color: C.purple, good: null, get: (r) => num(r.gamma) },
+    groups: [
+      { title: "Internal state", panels: [
+        { title: "PRECISION & VALUE (active-inference correlates)", series: [
+          { label: "v_s", color: C.green, good: "up", get: (r) => num(r.v_s) },
+          { label: "gamma", color: C.purple, good: null, get: (r) => num(r.gamma) },
+        ]},
+        { title: "EXPECTED FREE ENERGY · affect-adjacent (lower = better)", series: [
+          { label: "total", color: C.blue, good: "down", get: (r) => num(r.efe_breakdown?.total) },
+          { label: "engagement", color: C.teal, good: "down", get: (r) => num(r.efe_breakdown?.engagement_cost) },
+          { label: "coherence", color: C.purple, good: "down", get: (r) => num(r.efe_breakdown?.coherence_cost) },
+          { label: "connection", color: C.orange, good: "down", get: (r) => num(r.efe_breakdown?.connection_cost) },
+          { label: "truthfulness", color: C.green, good: "down", get: (r) => num(r.efe_breakdown?.truthfulness_cost) },
+        ]},
       ]},
-      { title: "EXPECTED FREE ENERGY · affect-adjacent (lower = better)", series: [
-        { label: "total", color: C.blue, good: "down", get: (r) => num(r.efe_breakdown?.total) },
-        { label: "engagement", color: C.teal, good: "down", get: (r) => num(r.efe_breakdown?.engagement_cost) },
-        { label: "coherence", color: C.purple, good: "down", get: (r) => num(r.efe_breakdown?.coherence_cost) },
-        { label: "connection", color: C.orange, good: "down", get: (r) => num(r.efe_breakdown?.connection_cost) },
-        { label: "truthfulness", color: C.green, good: "down", get: (r) => num(r.efe_breakdown?.truthfulness_cost) },
-      ]},
-      { title: "PLASTICITY PULSE · ||Δθ||", series: [
-        { label: "delta_theta", color: C.teal, good: null, get: (r) => num(r.delta_theta_norm) },
-      ]},
-      { title: "MUTUAL INFORMATION + BAND", series: [
-        { label: "mi", color: C.green, good: "up", get: (r) => num(r.mi_probe?.mi_latest) },
-        { label: "band_lo", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_lower) },
-        { label: "band_hi", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_upper) },
-      ]},
-      { title: "BEST-ACTION VALUE · r_best", series: [
-        { label: "r_best", color: C.blue, good: "up", get: (r) => num(r.r_best) },
+      { title: "Dynamics", panels: [
+        { title: "PLASTICITY PULSE · ||Δθ||", series: [
+          { label: "delta_theta", color: C.teal, good: null, get: (r) => num(r.delta_theta_norm) },
+        ]},
+        { title: "MUTUAL INFORMATION + BAND", series: [
+          { label: "mi", color: C.green, good: "up", get: (r) => num(r.mi_probe?.mi_latest) },
+          { label: "band_lo", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_lower) },
+          { label: "band_hi", color: C.gray, good: null, get: (r) => num(r.mi_probe?.mi_band_upper) },
+        ]},
+        { title: "BEST-ACTION VALUE · r_best", series: [
+          { label: "r_best", color: C.blue, good: "up", get: (r) => num(r.r_best) },
+        ]},
       ]},
     ],
   },
@@ -122,6 +149,7 @@ let records = [];
 let charts = [];
 let current = null;
 let ws = null;
+let groupSeries = {};   // group title -> flat list of its visible series
 
 const $ = (id) => document.getElementById(id);
 
@@ -197,28 +225,65 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
 
+function panelHasData(spec) {
+  return spec.series.some((s) => records.some((r) => s.get(r) != null));
+}
+
 function buildPanels(kind) {
-  const cfg = PANELS[kind];
+  const cfg = GROUPS[kind];
   const host = $("panels");
   host.innerHTML = "";
   charts.forEach((c) => c.u.destroy());
   charts = [];
+  groupSeries = {};
   const width = panelWidth();
-  for (const spec of cfg.panels) {
-    const panel = document.createElement("div");
-    panel.className = "panel";
-    const title = document.createElement("div");
-    title.className = "panel-title";
-    title.textContent = spec.title;
-    panel.appendChild(title);
-    const chartHost = document.createElement("div");
-    panel.appendChild(chartHost);
-    const readoutEl = document.createElement("div");
-    readoutEl.className = "panel-readout";
-    panel.appendChild(readoutEl);
-    host.appendChild(panel);
-    const u = makeChart(chartHost, spec, cfg.xlabel, width);
-    charts.push({ u, spec, readoutEl });
+  const visibleTitles = [];
+  for (const grp of cfg.groups) {
+    const panels = grp.panels.filter(panelHasData);
+    if (!panels.length) continue;            // hide empty groups (no data yet)
+    visibleTitles.push(grp.title);
+    groupSeries[grp.title] = panels.flatMap((p) => p.series);
+
+    const section = document.createElement("section");
+    section.className = "group";
+    section.dataset.group = grp.title;
+    const head = document.createElement("div");
+    head.className = "group-head";
+    head.innerHTML = `<span class="group-dot neutral" data-dot="${grp.title}"></span>` +
+      `<span class="group-title">${grp.title}</span><span class="group-chev">▾</span>`;
+    head.onclick = () => section.classList.toggle("collapsed");
+    section.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "group-body panels-grid";
+    for (const spec of panels) {
+      const panel = document.createElement("div"); panel.className = "panel";
+      const title = document.createElement("div"); title.className = "panel-title"; title.textContent = spec.title;
+      panel.appendChild(title);
+      const chartHost = document.createElement("div"); panel.appendChild(chartHost);
+      const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
+      body.appendChild(panel);
+      const u = makeChart(chartHost, spec, cfg.xlabel, width);
+      charts.push({ u, spec, readoutEl, group: grp.title });
+    }
+    section.appendChild(body);
+    host.appendChild(section);
+  }
+  buildVitals(visibleTitles);
+}
+
+function buildVitals(groupTitles) {
+  const strip = $("statstrip");
+  strip.innerHTML = "";
+  for (const title of groupTitles) {
+    const tile = document.createElement("div");
+    tile.className = "vtile";
+    tile.innerHTML = `<div class="k">${title}</div><div class="v neutral" data-vval="${title}">--</div>`;
+    tile.onclick = () => {
+      const sec = document.querySelector(`section.group[data-group="${title}"]`);
+      if (sec) { sec.classList.remove("collapsed"); sec.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    };
+    strip.appendChild(tile);
   }
 }
 
@@ -230,7 +295,7 @@ function panelWidth() {
 }
 
 function refreshData() {
-  const cfg = PANELS[current.kind];
+  const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
   for (const { u, spec, readoutEl } of charts) {
@@ -238,7 +303,7 @@ function refreshData() {
     u.setData([xs].concat(seriesData));
     renderReadout(readoutEl, spec, seriesData);
   }
-  renderStats(cfg);
+  updateOverview();
 }
 
 function renderReadout(el, spec, seriesData) {
@@ -267,18 +332,38 @@ function renderReadout(el, spec, seriesData) {
   el.innerHTML = html;
 }
 
-function renderStats(cfg) {
-  const strip = $("statstrip");
-  strip.innerHTML = "";
-  const last = records.length ? records[records.length - 1] : null;
-  for (const st of cfg.stats) {
-    const raw = last ? st.get(last) : null;
-    const cell = document.createElement("div");
-    cell.className = "stat";
-    const cls = st.dim ? "v dim" : "v";
-    cell.innerHTML = `<div class="k">${st.k}</div><div class="${cls}">${last ? st.fmt(raw) : "--"}</div>`;
-    strip.appendChild(cell);
+const HEALTH_ORDER = { neutral: 0, opt: 1, good: 1, warn: 2, near: 3, bad: 4 };
+
+// recompute the per-group health tiles, group dots, and "needs attention" bar
+function updateOverview() {
+  const flagged = [];
+  for (const title in groupSeries) {
+    let worst = "neutral", worstRank = 0, headline = null, headlineSet = false;
+    for (const s of groupSeries[title]) {
+      const st = seriesStats(records.map(s.get));
+      if (!headlineSet && st) { headline = st.end; headlineSet = true; }
+      const cls = momentumClass(st, s.good);
+      if (HEALTH_ORDER[cls] > worstRank) { worstRank = HEALTH_ORDER[cls]; worst = cls; }
+      if (cls === "warn" || cls === "near" || cls === "bad") flagged.push({ group: title, label: s.label, cls, st });
+    }
+    const dot = document.querySelector(`[data-dot="${title}"]`);
+    if (dot) dot.className = "group-dot " + worst;
+    const vval = document.querySelector(`[data-vval="${title}"]`);
+    if (vval) { vval.textContent = headlineSet ? g(headline) : "--"; vval.className = "v " + worst; }
   }
+  renderAttention(flagged);
+}
+
+function renderAttention(flagged) {
+  const el = $("attention");
+  if (!el) return;
+  if (!flagged.length) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "";
+  const rank = { warn: 1, near: 2, bad: 3 };
+  flagged.sort((a, b) => rank[b.cls] - rank[a.cls]);
+  el.innerHTML = `<span class="att-head">⚠ NEEDS ATTENTION</span>` +
+    flagged.map((f) => `<span class="att-item ${f.cls}">${f.group} · ${f.label}` +
+      (f.st && f.st.dpct != null ? ` ${f.st.dpct >= 0 ? "+" : ""}${f.st.dpct.toFixed(1)}%` : "") + `</span>`).join("");
 }
 
 async function loadStreams() {
