@@ -1,12 +1,16 @@
 # LuthiScope Metrics & Control Contract
 
-**Version:** 0.1.1 (draft)
+**Version:** 0.1.2 (draft)
 **Status:** Authoritative for Phase 1 (read paths). Control + event paths are
 *proposed* and require a matching change in the producer (LuthiModel) before they
 exist.
-**Changelog:** 0.1.1 (2026-06-17) — §2 corrected after independent code
-verification: documented the *actual* `_m9_head_step` record vs. the aspirational
-`CANONICAL_FIELDS`; §1 cadence note clarified for co-fire lines. 0.1 — initial.
+**Changelog:** 0.1.2 (2026-06-20) — §1 Emit Batch 1 (shipped in LuthiModel,
+reviewed): added top-level `grad_norm` / `lr` / `nonfinite`; `substrate{}` extras
+`set_point_drift` / `update_ema_mean` / `precision_mean`; new deep-cadence
+`substrate_blocks` per-block array. 0.1.1 (2026-06-17) — §2 corrected after
+independent code verification: documented the *actual* `_m9_head_step` record vs.
+the aspirational `CANONICAL_FIELDS`; §1 cadence note clarified for co-fire lines.
+0.1 — initial.
 
 This document defines the **seam** between LuthiScope and the systems it
 observes and controls. LuthiScope is a read-only consumer of metric streams plus
@@ -63,6 +67,9 @@ counted in *per-modality* steps.
 | `l_sigreg` | float | SIGReg (anti-collapse regularizer) loss component. |
 | `tokens_consumed` | object | `{text:int, audio:int, vision:int}` cumulative tokens per modality. |
 | `elapsed_seconds` | float | Wall-clock since run start (monotonic; adjusted on resume so it does not roll backward). |
+| `grad_norm` | float | Global L2 norm of gradients over the optimizer's (backprop-trained) params, at this logging step. Computed only on logging steps; distinct from substrate plasticity. NaN sentinel if a firing somehow precedes a `will_log` step. |
+| `lr` | float | Effective learning rate (`optimizer.param_groups[0]["lr"]`). |
+| `nonfinite` | bool | True if the loss or any gradient was non-finite at this step (fail-loud flag; logged-only for now, no kill yet). |
 
 ### `light` block — present on light-cadence firings
 
@@ -87,6 +94,9 @@ The living-substrate "pulse," aggregated from `model.aliveness_report()`.
 |---|---|---|
 | `pred_frob` | float | Mean prediction norm across PC blocks. Healthy trajectory **rises** (substrate building predictive structure). |
 | `err_acc` | float | Mean accumulated prediction error across blocks. Healthy trajectory **falls** (substrate learning to predict its input). |
+| `set_point_drift` | float | Mean weight drift from the homeostatic set point across blocks. Climbs as the substrate learns; drops under consolidation. |
+| `update_ema_mean` | float | Mean magnitude of recent PC self-modify updates — the plasticity "is changing" signal (distinct from `grad_norm`). |
+| `precision_mean` | float | Mean PC-layer precision (confidence weighting on its own predictions); climbs as predictions sharpen. |
 
 ### `deep` block — present only on deep-cadence firings (much rarer)
 
@@ -98,6 +108,15 @@ Representation-spectrum diagnostics from an SVD of the latent covariance.
 | `stable_rank` | float | ‖C‖_F² / ‖C‖_2². |
 | `sv_index_at_90pct` / `_at_99pct` | int | Number of singular values to reach 90% / 99% of variance. |
 | `log_sv_max` / `_min` / `_range` | float | Log-spectrum head/tail summary. |
+
+### `substrate_blocks` — present only on deep-cadence firings
+
+Top-level array, one object **per PC block** (so a single drifting block surfaces
+even when the cross-block `substrate{}` mean looks healthy — intended for a
+blocks×time heatmap). Each entry: `set_point_drift`, `update_ema_mean`,
+`precision_mean`, `prediction_norm`, `error_acc_mean` (floats; a value may be
+`null` if that block's `aliveness()` omitted the key). Emitted at deep cadence only
+to bound payload size.
 
 > **Consumer note:** A typical line has top-level + `light` + `substrate`. `deep`
 > appears on the deep cadence only. On a step that is a multiple of *both* cadence

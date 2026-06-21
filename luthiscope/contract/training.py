@@ -28,6 +28,10 @@ class LightMetrics(_Lenient):
 class SubstrateMetrics(_Lenient):
     pred_frob: Optional[float] = None
     err_acc: Optional[float] = None
+    # Emit Batch 1 (2026-06-20): surfaced from aliveness(), already computed
+    set_point_drift: Optional[float] = None
+    update_ema_mean: Optional[float] = None
+    precision_mean: Optional[float] = None
 
 
 class DeepMetrics(_Lenient):
@@ -48,6 +52,11 @@ class TrainingRecord(_Lenient):
     l_sigreg: Optional[float] = None
     tokens_consumed: Optional[dict[str, int]] = None
     elapsed_seconds: Optional[float] = None
+    # Emit Batch 1 (2026-06-20)
+    grad_norm: Optional[float] = None
+    lr: Optional[float] = None
+    nonfinite: Optional[bool] = None
     light: Optional[LightMetrics] = None
     substrate: Optional[SubstrateMetrics] = None
     deep: Optional[DeepMetrics] = None
+    substrate_blocks: Optional[list[dict]] = None  # per-block, deep cadence

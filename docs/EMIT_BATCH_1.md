@@ -1,5 +1,12 @@
 # Emit Batch 1 — handoff spec (implement in LuthiModel)
 
+> **Status: SHIPPED in LuthiModel + reviewed by 4.8 (2026-06-20).** 14 new tests +
+> regressions green; M9 path bit-identical. Contract §1 bumped to 0.1.2. Two
+> non-blocking review notes: (1) the per-param `.item()`/`.all()` in the grad loop
+> are per-param GPU syncs — fine since gated to logging steps, optional vectorize
+> later; (2) on `nonfinite` the step still applies (log-only by decision) — the
+> sustained-non-finite kill follow-up closes that window.
+
 **Goal:** add the highest-value, lowest-risk training metrics to
 `training_log.jsonl`. All changes are in **LuthiModel** (`luthi/v2/jepa_runner.py`,
 which already computes most of this). LuthiScope's grouped UI already has
