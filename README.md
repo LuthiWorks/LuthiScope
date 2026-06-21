@@ -93,6 +93,8 @@ Packaged desktop app: `pyinstaller LuthiScope.spec` → `dist/LuthiScope.exe` (s
 - [`docs/EMIT_BATCH_2.md`](docs/EMIT_BATCH_2.md) — spec: validation loss + linear probe.
 - [`docs/EXPLANATION_LAYER.md`](docs/EXPLANATION_LAYER.md) — tentative ideas for the
   explanation layer.
+- [`docs/TRAINING_WELFARE.md`](docs/TRAINING_WELFARE.md) — the commitment that training
+  be non-coercive, and LuthiScope's role as the welfare instrument.
 - [`docs/PACKAGING.md`](docs/PACKAGING.md) — building the desktop app.
 
 ## License
