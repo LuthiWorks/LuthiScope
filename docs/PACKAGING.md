@@ -16,11 +16,12 @@ the whole `frontend/`). `build/` and `dist/` are gitignored.
 
 ## Run
 
-- **Double-click `LuthiScope.exe`** — starts the local server and opens the UI. If
-  [`pywebview`](https://pywebview.flowlib.org/) is installed it opens a native
-  window titled "LuthiScope" with the logo icon; otherwise it opens your default
-  browser. (`pywebview` is not bundled by default, to keep the build robust; install
-  it before building if you want the native-window experience baked in.)
+- **Double-click `LuthiScope.exe`** — starts the local server and opens the UI in a
+  native [`pywebview`](https://pywebview.flowlib.org/) window titled "LuthiScope"
+  with the logo icon (pywebview + its .NET bridge are bundled; the spec collects
+  them best-effort). If the native window can't initialize on a given machine, the
+  launcher **falls back to the default browser**, so the app always works. (Install
+  `pip install pywebview` before building if rebuilding from a clean env.)
 - **From source:** `python -m luthiscope --app` (desktop mode) or
   `python -m luthiscope` (server only).
 - **Headless / service:** set `LUTHISCOPE_SERVE_ONLY=1` to serve without opening any

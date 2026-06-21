@@ -5,11 +5,14 @@ description = "Real-time observation & control console for the Luthi living-weig
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2",
+    "fastapi",
+    "uvicorn[standard]",   # includes websockets
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
-# Phase 1 adds: fastapi, uvicorn[standard], watchfiles
+dev = ["pytest>=8", "httpx"]          # httpx for the TestClient tests
+desktop = ["pywebview"]               # native-window app mode (else falls back to browser)
+packaging = ["pyinstaller", "pywebview"]
 
 [build-system]
 requires = ["hatchling"]
