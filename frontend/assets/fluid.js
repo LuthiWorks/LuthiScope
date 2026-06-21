@@ -270,6 +270,13 @@
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "#080b14"; ctx.fillRect(0, 0, Wpx, Hpx);
   }
+  // Wipe all simulation state so a re-enable starts from inert (no leftover
+  // objects, dye, or velocity) rather than resuming where it was paused.
+  function resetState() {
+    objects.length = 0;
+    idleFrames = 0;
+    u.fill(0); v.fill(0); u0.fill(0); v0.fill(0); dens.fill(0); dens0.fill(0);
+  }
 
   // ---- input ----
   window.addEventListener("mousemove", (e) => {
@@ -299,7 +306,7 @@
     set(key, val) {
       cfg[key] = val; persist();
       if (key === "quality") { allocate(val); render(); }
-      if (key === "enabled") { if (!val) { active = false; clearCanvas(); } }
+      if (key === "enabled" && !val) { active = false; resetState(); clearCanvas(); }
       start();
       if (!continuous() && objects.length === 0 && cfg.enabled && !active) render();
     },
