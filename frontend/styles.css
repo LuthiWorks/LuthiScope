@@ -218,3 +218,12 @@ html, body {
 .ro-delta.near { color: var(--c-near); }
 .ro-delta.bad { color: var(--c-bad); }
 .ro-delta.neutral { color: var(--ink-faint); }
+
+/* per-block heatmap */
+.hm-select {
+  background: var(--glass); color: var(--ink); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 2px 6px; font-family: var(--mono); font-size: 11px; margin-bottom: 6px;
+}
+.hm-canvas { display: block; width: 100%; border: 1px solid var(--edge); border-radius: 4px; image-rendering: pixelated; }
+.hm-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
+.hm-readout { color: var(--ink); }

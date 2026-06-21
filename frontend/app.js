@@ -49,6 +49,9 @@ const GROUPS = {
         { title: "PRECISION (when emitted)", series: [
           { label: "precision", color: C.blue, good: null, get: (r) => num(r.substrate?.precision_mean) },
         ]},
+        { title: "PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)", type: "heatmap",
+          has: (r) => Array.isArray(r.substrate_blocks) && r.substrate_blocks.length > 0,
+          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "prediction_norm", "error_acc_mean"] },
       ]},
       { title: "Representation", panels: [
         { title: "VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE", series: [
@@ -225,7 +228,85 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
 
+// sequential colormap (low -> high): deep-blue, blue, green, yellow, red
+function heatColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  const stops = [[15, 23, 42], [37, 99, 235], [34, 197, 94], [234, 179, 8], [239, 68, 68]];
+  const seg = t * (stops.length - 1), i = Math.floor(seg), f = seg - i;
+  const a = stops[i], b = stops[Math.min(i + 1, stops.length - 1)];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+
+// blocks x time raster of a per-block substrate metric (substrate_blocks, deep cadence)
+function makeHeatmap(mountEl, spec, xlabel) {
+  const sel = document.createElement("select");
+  sel.className = "hm-select";
+  spec.metrics.forEach((m, i) => {
+    const o = document.createElement("option"); o.value = m; o.textContent = m;
+    if (i === 0) o.selected = true; sel.appendChild(o);
+  });
+  const canvas = document.createElement("canvas"); canvas.className = "hm-canvas";
+  const foot = document.createElement("div"); foot.className = "hm-foot";
+  const legend = document.createElement("span"); legend.className = "hm-legend";
+  const readout = document.createElement("span"); readout.className = "hm-readout";
+  foot.appendChild(legend); foot.appendChild(readout);
+  mountEl.appendChild(sel); mountEl.appendChild(canvas); mountEl.appendChild(foot);
+  const ctx = canvas.getContext("2d");
+  let recs = [], metric = spec.metrics[0], frames = [], nBlocks = 0, vmin = 0, vmax = 1;
+
+  function compute() {
+    frames = recs.filter(spec.has);
+    nBlocks = frames.reduce((m, f) => Math.max(m, f.substrate_blocks.length), 0);
+    let lo = Infinity, hi = -Infinity;
+    for (const f of frames) for (const b of f.substrate_blocks) {
+      const v = num(b && b[metric]); if (v == null) continue;
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    vmin = lo === Infinity ? 0 : lo; vmax = hi === -Infinity ? 1 : hi;
+  }
+  function draw() {
+    const w = Math.max(80, mountEl.clientWidth - 4);
+    const rowH = nBlocks ? Math.max(4, Math.min(16, Math.floor(180 / nBlocks))) : 10;
+    canvas.width = w; canvas.height = Math.max(40, nBlocks * rowH);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!frames.length || !nBlocks) {
+      ctx.fillStyle = "#5d6a80"; ctx.font = "11px monospace";
+      ctx.fillText("no per-block data yet (emitted at deep cadence)", 6, 16);
+      legend.textContent = ""; return;
+    }
+    const cw = w / frames.length, span = (vmax - vmin) || 1;
+    for (let fi = 0; fi < frames.length; fi++) {
+      const blocks = frames[fi].substrate_blocks;
+      for (let bi = 0; bi < nBlocks; bi++) {
+        const v = num(blocks[bi] && blocks[bi][metric]); if (v == null) continue;
+        const c = heatColor((v - vmin) / span);
+        ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+        ctx.fillRect(fi * cw, bi * rowH, Math.ceil(cw), rowH);
+      }
+    }
+    legend.textContent = `${metric}: ${g(vmin)} … ${g(vmax)} · ${nBlocks} blocks × ${frames.length} firings`;
+  }
+  canvas.addEventListener("mousemove", (e) => {
+    if (!frames.length || !nBlocks) return;
+    const r = canvas.getBoundingClientRect();
+    const fi = Math.min(frames.length - 1, Math.max(0, Math.floor((e.clientX - r.left) / (r.width / frames.length))));
+    const bi = Math.min(nBlocks - 1, Math.max(0, Math.floor((e.clientY - r.top) / (r.height / nBlocks))));
+    const f = frames[fi], v = num(f.substrate_blocks[bi] && f.substrate_blocks[bi][metric]);
+    readout.textContent = `block ${bi} · ${xlabel} ${gint(f.step != null ? f.step : f.cycle)} · ${v == null ? "--" : g(v)}`;
+  });
+  canvas.addEventListener("mouseleave", () => { readout.textContent = ""; });
+  sel.addEventListener("change", () => { metric = sel.value; compute(); draw(); });
+
+  return {
+    hm: true,
+    setData(records) { recs = records; compute(); draw(); },
+    resize() { draw(); },
+    destroy() { mountEl.innerHTML = ""; },
+  };
+}
+
 function panelHasData(spec) {
+  if (spec.type === "heatmap") return records.some(spec.has);
   return spec.series.some((s) => records.some((r) => s.get(r) != null));
 }
 
@@ -233,7 +314,7 @@ function buildPanels(kind) {
   const cfg = GROUPS[kind];
   const host = $("panels");
   host.innerHTML = "";
-  charts.forEach((c) => c.u.destroy());
+  charts.forEach((c) => (c.hm ? c.hm.destroy() : c.u.destroy()));
   charts = [];
   groupSeries = {};
   const width = panelWidth();
@@ -242,7 +323,7 @@ function buildPanels(kind) {
     const panels = grp.panels.filter(panelHasData);
     if (!panels.length) continue;            // hide empty groups (no data yet)
     visibleTitles.push(grp.title);
-    groupSeries[grp.title] = panels.flatMap((p) => p.series);
+    groupSeries[grp.title] = panels.flatMap((p) => p.series || []);
 
     const section = document.createElement("section");
     section.className = "group";
@@ -261,10 +342,15 @@ function buildPanels(kind) {
       const title = document.createElement("div"); title.className = "panel-title"; title.textContent = spec.title;
       panel.appendChild(title);
       const chartHost = document.createElement("div"); panel.appendChild(chartHost);
-      const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
       body.appendChild(panel);
-      const u = makeChart(chartHost, spec, cfg.xlabel, width);
-      charts.push({ u, spec, readoutEl, group: grp.title });
+      if (spec.type === "heatmap") {
+        const hm = makeHeatmap(chartHost, spec, cfg.xlabel);
+        charts.push({ hm, spec, group: grp.title });
+      } else {
+        const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
+        const u = makeChart(chartHost, spec, cfg.xlabel, width);
+        charts.push({ u, spec, readoutEl, group: grp.title });
+      }
     }
     section.appendChild(body);
     host.appendChild(section);
@@ -298,10 +384,11 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
-  for (const { u, spec, readoutEl } of charts) {
-    const seriesData = spec.series.map((s) => pts.map(s.get));
-    u.setData([xs].concat(seriesData));
-    renderReadout(readoutEl, spec, seriesData);
+  for (const c of charts) {
+    if (c.hm) { c.hm.setData(records); continue; }
+    const seriesData = c.spec.series.map((s) => pts.map(s.get));
+    c.u.setData([xs].concat(seriesData));
+    renderReadout(c.readoutEl, c.spec, seriesData);
   }
   updateOverview();
 }
@@ -428,7 +515,7 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     const w = panelWidth();
-    charts.forEach((c) => c.u.setSize({ width: w, height: 200 }));
+    charts.forEach((c) => (c.hm ? c.hm.resize() : c.u.setSize({ width: w, height: 200 })));
   }, 120);
 });
 
