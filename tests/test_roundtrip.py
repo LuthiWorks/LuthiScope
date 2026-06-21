@@ -52,6 +52,17 @@ def test_follower_incremental_and_partial(tmp_path):
     assert f.read_new() == []
 
 
+def test_follower_recovers_from_truncation(tmp_path):
+    # If the file is truncated/rotated to something shorter than the read offset,
+    # the follower must reset and re-read rather than going silently dead.
+    p = tmp_path / "log.jsonl"
+    p.write_text('{"a": 1}\n{"a": 2}\n', encoding="utf-8")
+    f = JsonlFollower(p)
+    assert [r["a"] for r in f.read_new()] == [1, 2]
+    p.write_text('{"a": 9}\n', encoding="utf-8")  # smaller than the prior offset
+    assert [r["a"] for r in f.read_new()] == [9]
+
+
 def test_training_roundtrip_lossless():
     originals = _raw_objs(TRAIN_FIX)
     assert originals, "fixture should not be empty"

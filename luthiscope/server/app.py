@@ -13,6 +13,7 @@ behind a separate, explicit API that does not exist yet.)
 from __future__ import annotations
 
 import asyncio
+import math
 import sys
 import threading
 from pathlib import Path
@@ -33,20 +34,47 @@ else:
 LIVE_POLL_SECONDS = 0.5
 
 
+def _scrub_nonfinite(obj):
+    """Replace non-finite floats (NaN/Infinity) with None, recursively.
+
+    JSON has no NaN. Starlette's JSONResponse renders with allow_nan=False (→ 500),
+    and a literal NaN sent over the WebSocket is rejected by the browser's
+    JSON.parse (→ silent dead channel). EMIT_BATCH_1 legitimately emits NaN
+    sentinels (no-signal grad_norm, empty-aliveness means, non-finite steps), so we
+    scrub at the API boundary. The frontend's num() maps null → "no data" for that
+    point, which is the correct semantic.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _scrub_nonfinite(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_scrub_nonfinite(v) for v in obj]
+    return obj
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(title="LuthiScope", version="0.1.0")
 
     store = Store(settings.db_path, check_same_thread=False)
     lock = threading.Lock()
-    ingested: set[str] = set()
+    ingest_mtime: dict[str, float] = {}  # stream_id -> source mtime at last ingest
 
     def ensure_ingested(stream) -> None:
-        """Rebuild a stream's derived index from its canonical file. Rebuild (not
-        incremental) keeps the index trivially correct; cheap at these sizes."""
+        """Rebuild a stream's derived index from its canonical file, but only when
+        the file changed since the last ingest (mtime-gated). Rebuild (not
+        incremental) keeps the index trivially correct; the mtime gate avoids a full
+        re-ingest on every request, and a changed mtime also covers log rotation."""
+        try:
+            mtime = stream.path.stat().st_mtime
+        except OSError:
+            mtime = None
         with lock:
+            if mtime is not None and ingest_mtime.get(stream.stream_id) == mtime:
+                return
             store.rebuild_run(stream.stream_id, stream.kind, stream.path)
-            ingested.add(stream.stream_id)
+            ingest_mtime[stream.stream_id] = mtime
 
     @app.get("/api/streams")
     def list_streams():
@@ -72,7 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if s.kind == TRAINING
                 else store.cognition_raw(s.stream_id)
             )
-        return {"id": s.stream_id, "kind": s.kind, "records": recs}
+        return {"id": s.stream_id, "kind": s.kind, "records": _scrub_nonfinite(recs)}
 
     @app.websocket("/ws/streams/{stream_id:path}")
     async def live(websocket: WebSocket, stream_id: str):
@@ -87,7 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             while True:
                 new = follower.read_new()
                 if new:
-                    await websocket.send_json({"records": new})
+                    await websocket.send_json({"records": _scrub_nonfinite(new)})
                 await asyncio.sleep(LIVE_POLL_SECONDS)
         except WebSocketDisconnect:
             return

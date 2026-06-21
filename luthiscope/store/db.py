@@ -69,6 +69,15 @@ def _int(v) -> Optional[int]:
 
 
 class Store:
+    """Derived SQLite index over the canonical JSONL.
+
+    NOT internally synchronized: ``_next_seq`` + ``executemany`` and ``rebuild_run``
+    (clear + ingest) are multi-step and would race if run concurrently for the same
+    run (duplicate seq / empty-read windows). Callers MUST serialize access — the
+    server wraps every call in a single ``threading.Lock``. Safe for one writer at a
+    time.
+    """
+
     def __init__(self, path: Union[str, Path], check_same_thread: bool = True):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)

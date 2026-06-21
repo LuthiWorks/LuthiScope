@@ -45,6 +45,8 @@ class JsonlFollower:
         picks it up once it has been terminated.
         """
         try:
+            if self.path.stat().st_size < self._offset:
+                self._offset = 0  # file truncated/rotated -> re-read from the start
             with open(self.path, "rb") as f:
                 f.seek(self._offset)
                 data = f.read()
