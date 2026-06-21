@@ -10,7 +10,9 @@ continuously-updated display of the signals that tell you whether the substrate
 is alive, learning, and healthy — with a plain-language explanation alongside
 the raw data.
 
-**Status: In Development** (Phase 1 — read-only monitor)
+**Status: Phase 1 (read-only monitor) — functional.** Emit Batch 1 metrics
+integrated. Control plane (Phase 2) and automated studies (Phase 3) are designed
+but not yet built.
 
 ---
 
@@ -50,12 +52,48 @@ optimizer sweeps, SAE interpretability) on demand.
   documented file contract ([`docs/METRICS_CONTRACT.md`](docs/METRICS_CONTRACT.md)),
   so either side can change internally without breaking the other.
 
+## Quickstart
+
+```bash
+pip install -e .          # pydantic, fastapi, uvicorn (websockets via uvicorn[standard])
+python -m luthiscope      # serves http://127.0.0.1:8800
+```
+
+Open **http://127.0.0.1:8800**. With no config it reads the bundled `demo_runs/`
+(three sample streams, including `m8_batch1_demo` which exercises every Batch-1
+metric and the per-block heatmap). To watch real runs, copy `.env.example` to
+`.env` and point `LUTHISCOPE_RUNS_DIR` at the trainer's runs directory; point it at
+a run *while it's training* and the live tail works automatically.
+
+Packaged desktop app: `pyinstaller LuthiScope.spec` → `dist/LuthiScope.exe` (see
+[`docs/PACKAGING.md`](docs/PACKAGING.md)). Tests: `python -m pytest`.
+
+## What's implemented (Phase 1)
+
+- Read-only ingest of both patients (training + cognition JSONL) into a rebuildable
+  SQLite index; live WebSocket tail + post-hoc history.
+- Grouped overview UI: per-group vitals tiles with polarity-aware health colors, a
+  "needs attention" bar, collapsible metric groups, cursor tooltips, and a
+  progression readout (start→end, Δ%, min/max/σ/range) per series.
+- Emit Batch 1 metrics surfaced (grad norm, LR, substrate drift/plasticity/
+  precision) including the per-block `substrate_blocks` heatmap.
+- Configurable fluid-dynamics background (Stam stable-fluids + vorticity
+  confinement) with a settings panel; click-driven and self-idling (~0 CPU at rest).
+- Single-file packaged build with the LuthiWorks logo icon.
+
 ## Documentation
 
 - [`docs/METRICS_CONTRACT.md`](docs/METRICS_CONTRACT.md) — the data/command seam
   LuthiScope consumes and emits. The load-bearing spec.
 - [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — phased build plan,
   architecture, and stack.
+- [`docs/METRICS_ROADMAP.md`](docs/METRICS_ROADMAP.md) — producer-side metrics to add.
+- [`docs/EMIT_BATCH_1.md`](docs/EMIT_BATCH_1.md) — shipped + reviewed (substrate
+  extras, grad norm, LR, per-block).
+- [`docs/EMIT_BATCH_2.md`](docs/EMIT_BATCH_2.md) — spec: validation loss + linear probe.
+- [`docs/EXPLANATION_LAYER.md`](docs/EXPLANATION_LAYER.md) — tentative ideas for the
+  explanation layer.
+- [`docs/PACKAGING.md`](docs/PACKAGING.md) — building the desktop app.
 
 ## License
 
