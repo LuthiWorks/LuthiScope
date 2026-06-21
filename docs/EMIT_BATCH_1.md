@@ -88,11 +88,15 @@ Then in `_compute_and_log_diagnostics`, add to the top-level record:
   predictor, projection heads) — distinct from substrate plasticity (the living
   weights update via the PC mechanism, not autograd). So `grad_norm` and
   `update_ema_mean` are two different "how much is changing" signals; that's
-  intended.
-- **Design decision for Brian/4.8:** on `nonfinite`, do we just log it, or treat
-  sustained non-finite as a fail-loud kill (consistent with the project's "fail
-  loud" stance)? Recommend: log always now; wire a kill on sustained non-finite as
-  a small follow-up.
+  intended. Do **not** try to fold living-weight buffers into `grad_norm`.
+- **DECIDED (2026-06-20):** log `nonfinite` now; do **not** implement a kill in this
+  batch. A fail-loud kill on *sustained* non-finite is a separate follow-up.
+- **Perf — gate to logging steps.** Grads only exist between `backward()` and
+  `step()`, so this must live in `train_step`. But diagnostics fire only every N
+  per-modality steps, and looping all trainable params (+ `isfinite`) on every step
+  is hot-path overhead. Thread a `will_log` flag into `train_step` (compute it in
+  `run()` from the *post-increment* per-modality step before the call) and only
+  compute `grad_norm` / `nonfinite` when `will_log` is true.
 
 ## 4. Learning rate
 
