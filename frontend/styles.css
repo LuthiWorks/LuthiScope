@@ -146,6 +146,18 @@ html, body {
 .restore-all { margin-top: 6px; width: 100%; background: var(--glass); color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; cursor: pointer; font-family: inherit; }
 .restore-all:hover { color: var(--c-good); border-color: var(--c-good); }
 
+/* bigger action icons + hover pulse */
+@keyframes icon-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+.s-trash, .s-restore { font-size: 17px; }
+#settings-btn { width: 34px; height: 30px; font-size: 18px; }
+.s-trash:hover, .s-restore:hover, #settings-btn:hover, #refresh:hover,
+#clear-all:hover, .restore-all:hover, #settings-close:hover {
+  animation: icon-pulse 0.7s ease-in-out infinite;
+}
+
+/* large LuthiWorks logo above the stream list (~1 in) */
+#sidebar-logo { display: block; width: 96px; height: 96px; margin: 2px auto 14px; filter: drop-shadow(0 0 10px rgba(59,130,246,.25)); }
+
 #main { flex: 1; overflow-y: auto; padding: 16px 20px; }
 #now-line { color: var(--ink-dim); margin-bottom: 12px; font-family: var(--mono); font-size: 12px; }
 #now-line b { color: var(--ink); }

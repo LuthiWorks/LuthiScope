@@ -332,7 +332,7 @@ function buildPanels(kind) {
     head.className = "group-head";
     head.innerHTML = `<span class="group-dot neutral" data-dot="${grp.title}"></span>` +
       `<span class="group-title">${grp.title}</span><span class="group-chev">▾</span>`;
-    head.onclick = () => section.classList.toggle("collapsed");
+    head.onclick = () => { section.classList.toggle("collapsed"); requestAnimationFrame(fitCharts); };
     section.appendChild(head);
 
     const body = document.createElement("div");
@@ -345,17 +345,29 @@ function buildPanels(kind) {
       body.appendChild(panel);
       if (spec.type === "heatmap") {
         const hm = makeHeatmap(chartHost, spec, cfg.xlabel);
-        charts.push({ hm, spec, group: grp.title });
+        charts.push({ hm, spec, group: grp.title, el: chartHost });
       } else {
         const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
         const u = makeChart(chartHost, spec, cfg.xlabel, width);
-        charts.push({ u, spec, readoutEl, group: grp.title });
+        charts.push({ u, spec, readoutEl, group: grp.title, el: chartHost });
       }
     }
     section.appendChild(body);
     host.appendChild(section);
   }
   buildVitals(visibleTitles);
+  requestAnimationFrame(fitCharts);
+}
+
+// Size each chart to its actual container width (the grid lays out after build, so
+// a fixed estimate left panels half-filled). uPlot charts get setSize; heatmaps
+// self-measure on resize().
+function fitCharts() {
+  for (const c of charts) {
+    if (c.hm) { c.hm.resize(); continue; }
+    const w = (c.el && c.el.clientWidth) || panelWidth();
+    if (w > 0) c.u.setSize({ width: w, height: 200 });
+  }
 }
 
 function buildVitals(groupTitles) {
@@ -563,10 +575,7 @@ function openLive(id) {
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    const w = panelWidth();
-    charts.forEach((c) => (c.hm ? c.hm.resize() : c.u.setSize({ width: w, height: 200 })));
-  }, 120);
+  resizeTimer = setTimeout(fitCharts, 120);
 });
 
 // ---- settings panel ----
@@ -626,11 +635,6 @@ const clearAllBtn = $("clear-all");
 if (clearAllBtn) clearAllBtn.onclick = () => {
   for (const s of allStreams) if (!hiddenIds.has(s.id)) hiddenIds.add(s.id);
   saveHidden(); renderStreamList();
-};
-const bgBtn = $("bg-toggle");
-if (bgBtn) bgBtn.onclick = () => {
-  const on = window.LuthiBG ? window.LuthiBG.toggle() : false;
-  bgBtn.style.color = on ? "" : "var(--ink-faint)";
 };
 const sBtn = $("settings-btn");
 if (sBtn) sBtn.onclick = () => {
