@@ -140,9 +140,11 @@ html, body {
 .hidden-dd summary:hover { color: var(--ink); }
 .hidden-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .hidden-list li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; color: var(--ink-faint); }
-.s-hidden-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.s-hidden-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 .s-restore { background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 13px; }
 .s-restore:hover { color: var(--c-good); }
+.s-delete { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 13px; }
+.s-delete:hover { color: var(--c-bad); }
 .restore-all { margin-top: 6px; width: 100%; background: var(--glass); color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; cursor: pointer; font-family: inherit; }
 .restore-all:hover { color: var(--c-good); border-color: var(--c-good); }
 
@@ -150,7 +152,7 @@ html, body {
 @keyframes icon-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
 .s-trash, .s-restore { font-size: 17px; }
 #settings-btn { width: 34px; height: 30px; font-size: 18px; }
-.s-trash:hover, .s-restore:hover, #settings-btn:hover, #refresh:hover,
+.s-trash:hover, .s-restore:hover, .s-delete:hover, #settings-btn:hover, #refresh:hover,
 #clear-all:hover, .restore-all:hover, #settings-close:hover {
   animation: icon-pulse 0.7s ease-in-out infinite;
 }

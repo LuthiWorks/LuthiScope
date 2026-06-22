@@ -252,6 +252,7 @@ function makeHeatmap(mountEl, spec, xlabel) {
   foot.appendChild(legend); foot.appendChild(readout);
   mountEl.appendChild(sel); mountEl.appendChild(canvas); mountEl.appendChild(foot);
   const ctx = canvas.getContext("2d");
+  const LABEL_W = 26;   // left gutter for block-index labels
   let recs = [], metric = spec.metrics[0], frames = [], nBlocks = 0, vmin = 0, vmax = 1;
 
   function compute() {
@@ -265,8 +266,8 @@ function makeHeatmap(mountEl, spec, xlabel) {
     vmin = lo === Infinity ? 0 : lo; vmax = hi === -Infinity ? 1 : hi;
   }
   function draw() {
-    const w = Math.max(80, mountEl.clientWidth - 4);
-    const rowH = nBlocks ? Math.max(4, Math.min(16, Math.floor(180 / nBlocks))) : 10;
+    const w = Math.max(120, mountEl.clientWidth - 4);
+    const rowH = nBlocks ? Math.max(8, Math.min(20, Math.floor(220 / nBlocks))) : 12;
     canvas.width = w; canvas.height = Math.max(40, nBlocks * rowH);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!frames.length || !nBlocks) {
@@ -274,22 +275,30 @@ function makeHeatmap(mountEl, spec, xlabel) {
       ctx.fillText("no per-block data yet (emitted at deep cadence)", 6, 16);
       legend.textContent = ""; return;
     }
-    const cw = w / frames.length, span = (vmax - vmin) || 1;
+    const plotW = w - LABEL_W, cw = plotW / frames.length, span = (vmax - vmin) || 1;
     for (let fi = 0; fi < frames.length; fi++) {
       const blocks = frames[fi].substrate_blocks;
       for (let bi = 0; bi < nBlocks; bi++) {
         const v = num(blocks[bi] && blocks[bi][metric]); if (v == null) continue;
         const c = heatColor((v - vmin) / span);
         ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
-        ctx.fillRect(fi * cw, bi * rowH, Math.ceil(cw), rowH);
+        ctx.fillRect(LABEL_W + fi * cw, bi * rowH, Math.ceil(cw), rowH);
       }
+    }
+    // block-index labels down the left gutter (0-based, matching the model)
+    ctx.fillStyle = "#8492a8"; ctx.font = "9px monospace"; ctx.textBaseline = "middle";
+    const lblStep = rowH >= 12 ? 1 : Math.ceil(nBlocks / 16);
+    for (let bi = 0; bi < nBlocks; bi += lblStep) {
+      ctx.fillText(String(bi), 3, bi * rowH + rowH / 2 + 0.5);
     }
     legend.textContent = `${metric}: ${g(vmin)} … ${g(vmax)} · ${nBlocks} blocks × ${frames.length} firings`;
   }
   canvas.addEventListener("mousemove", (e) => {
     if (!frames.length || !nBlocks) return;
     const r = canvas.getBoundingClientRect();
-    const fi = Math.min(frames.length - 1, Math.max(0, Math.floor((e.clientX - r.left) / (r.width / frames.length))));
+    const px = (e.clientX - r.left) - LABEL_W;
+    if (px < 0) { readout.textContent = ""; return; }
+    const fi = Math.min(frames.length - 1, Math.max(0, Math.floor(px / ((r.width - LABEL_W) / frames.length))));
     const bi = Math.min(nBlocks - 1, Math.max(0, Math.floor((e.clientY - r.top) / (r.height / nBlocks))));
     const f = frames[fi], v = num(f.substrate_blocks[bi] && f.substrate_blocks[bi][metric]);
     readout.textContent = `block ${bi} · ${xlabel} ${gint(f.step != null ? f.step : f.cycle)} · ${v == null ? "--" : g(v)}`;
@@ -471,6 +480,13 @@ const HIDDEN_KEY = "luthiscope.hiddenStreams";
 function loadHidden() { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]")); } catch (e) { return new Set(); } }
 function saveHidden() { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenIds])); } catch (e) {} }
 let hiddenIds = loadHidden();
+// "Permanent delete" = forget from the menu (never touches files). Stored as
+// id -> record count at delete time; if the run's record count later changes (it
+// came back to life), it reappears.
+const FORGOT_KEY = "luthiscope.forgottenStreams";
+function loadForgot() { try { return JSON.parse(localStorage.getItem(FORGOT_KEY) || "{}"); } catch (e) { return {}; } }
+function saveForgot() { try { localStorage.setItem(FORGOT_KEY, JSON.stringify(forgotten)); } catch (e) {} }
+let forgotten = loadForgot();
 let allStreams = [];
 
 async function loadStreams() {
@@ -487,10 +503,20 @@ async function loadStreams() {
 }
 
 function renderStreamList() {
+  // reconcile permanently-deleted streams: stay gone unless the run changed
+  let forgotChanged = false;
+  const suppressed = new Set();
+  for (const s of allStreams) {
+    if (s.id in forgotten) {
+      if (s.n_records === forgotten[s.id]) suppressed.add(s.id);
+      else { delete forgotten[s.id]; forgotChanged = true; }
+    }
+  }
+  if (forgotChanged) saveForgot();
   const list = $("stream-list");
   list.innerHTML = "";
-  const visible = allStreams.filter((s) => !hiddenIds.has(s.id));
-  const hiddenStreams = allStreams.filter((s) => hiddenIds.has(s.id));
+  const visible = allStreams.filter((s) => !hiddenIds.has(s.id) && !suppressed.has(s.id));
+  const hiddenStreams = allStreams.filter((s) => hiddenIds.has(s.id) && !suppressed.has(s.id));
   if (!allStreams.length) {
     list.innerHTML = "<li class='s-meta'>no streams found in runs dir</li>";
   } else if (!visible.length) {
@@ -531,7 +557,10 @@ function renderHidden(hiddenStreams) {
     const restore = document.createElement("button");
     restore.className = "s-restore"; restore.title = "Restore"; restore.textContent = "↩";
     restore.onclick = () => { hiddenIds.delete(s.id); saveHidden(); renderStreamList(); };
-    li.appendChild(name); li.appendChild(restore);
+    const del = document.createElement("button");
+    del.className = "s-delete"; del.title = "Delete from list (returns only if the run changes)"; del.textContent = "✕";
+    del.onclick = () => { forgotten[s.id] = s.n_records; saveForgot(); hiddenIds.delete(s.id); saveHidden(); renderStreamList(); };
+    li.appendChild(name); li.appendChild(restore); li.appendChild(del);
     hl.appendChild(li);
   }
   wrap.querySelector(".restore-all").onclick = () => {
