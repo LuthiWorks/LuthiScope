@@ -102,13 +102,20 @@ html, body {
   background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-right: 1px solid var(--edge);
 }
-.sidebar-head { color: var(--ink-dim); letter-spacing: 2px; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+.sidebar-head { display: flex; justify-content: space-between; align-items: center; color: var(--ink-dim); letter-spacing: 2px; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+#clear-all { background: none; border: none; color: var(--ink-faint); font-size: 10px; letter-spacing: 1px; cursor: pointer; padding: 0; }
+#clear-all:hover { color: var(--c-bad); }
 #stream-list { list-style: none; margin: 0; padding: 0; }
 #stream-list li {
-  padding: 9px 11px; margin-bottom: 7px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 11px; margin-bottom: 7px;
   border: 1px solid var(--edge); border-radius: 8px; background: var(--glass);
   transition: border-color .15s, box-shadow .15s;
 }
+.s-main { flex: 1; min-width: 0; cursor: pointer; }
+.s-trash { flex: 0 0 auto; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 13px; opacity: 0; transition: opacity .12s; }
+#stream-list li:hover .s-trash { opacity: 1; }
+.s-trash:hover { color: var(--c-bad); }
 #stream-list li:hover { border-color: var(--c-opt); }
 #stream-list li.active { border-color: var(--c-opt); box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
 #stream-list .s-name { color: var(--ink); font-weight: 600; }
@@ -126,6 +133,18 @@ html, body {
   cursor: pointer; font-family: inherit;
 }
 #refresh:hover { color: var(--c-opt); border-color: var(--c-opt); }
+
+/* hidden-streams dropdown */
+.hidden-dd { margin-top: 8px; font-size: 11px; }
+.hidden-dd summary { color: var(--ink-dim); cursor: pointer; letter-spacing: 1px; padding: 4px 2px; }
+.hidden-dd summary:hover { color: var(--ink); }
+.hidden-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.hidden-list li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; color: var(--ink-faint); }
+.s-hidden-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.s-restore { background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 13px; }
+.s-restore:hover { color: var(--c-good); }
+.restore-all { margin-top: 6px; width: 100%; background: var(--glass); color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; cursor: pointer; font-family: inherit; }
+.restore-all:hover { color: var(--c-good); border-color: var(--c-good); }
 
 #main { flex: 1; overflow-y: auto; padding: 16px 20px; }
 #now-line { color: var(--ink-dim); margin-bottom: 12px; font-family: var(--mono); font-size: 12px; }

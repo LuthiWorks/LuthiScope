@@ -453,29 +453,79 @@ function renderAttention(flagged) {
       (f.st && f.st.dpct != null ? ` ${f.st.dpct >= 0 ? "+" : ""}${f.st.dpct.toFixed(1)}%` : "") + `</span>`).join("");
 }
 
+// Dismissed streams are hidden (not deleted — streams are discovered from disk) and
+// persisted, so they stay hidden across refreshes/rescans; restore from the dropdown.
+const HIDDEN_KEY = "luthiscope.hiddenStreams";
+function loadHidden() { try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]")); } catch (e) { return new Set(); } }
+function saveHidden() { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenIds])); } catch (e) {} }
+let hiddenIds = loadHidden();
+let allStreams = [];
+
 async function loadStreams() {
   const list = $("stream-list");
   list.innerHTML = "<li class='s-meta'>scanning…</li>";
-  let streams = [];
   try {
-    streams = await (await fetch("/api/streams")).json();
+    allStreams = await (await fetch("/api/streams")).json();
   } catch (e) {
+    allStreams = [];
     list.innerHTML = "<li class='s-meta'>backend unreachable</li>";
     return;
   }
+  renderStreamList();
+}
+
+function renderStreamList() {
+  const list = $("stream-list");
   list.innerHTML = "";
-  if (!streams.length) {
+  const visible = allStreams.filter((s) => !hiddenIds.has(s.id));
+  const hiddenStreams = allStreams.filter((s) => hiddenIds.has(s.id));
+  if (!allStreams.length) {
     list.innerHTML = "<li class='s-meta'>no streams found in runs dir</li>";
-    return;
+  } else if (!visible.length) {
+    list.innerHTML = "<li class='s-meta'>all streams hidden</li>";
   }
-  for (const s of streams) {
+  for (const s of visible) {
     const li = document.createElement("li");
-    li.innerHTML =
+    const main = document.createElement("div");
+    main.className = "s-main";
+    main.innerHTML =
       `<div class="s-name">${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
       `<div class="s-meta">${s.n_records} records</div>`;
-    li.onclick = () => selectStream(s.id, s.kind, li);
+    main.onclick = () => selectStream(s.id, s.kind, li);
+    const trash = document.createElement("button");
+    trash.className = "s-trash"; trash.title = "Hide this stream"; trash.textContent = "🗑";
+    trash.onclick = (e) => { e.stopPropagation(); hiddenIds.add(s.id); saveHidden(); renderStreamList(); };
+    li.appendChild(main); li.appendChild(trash);
     list.appendChild(li);
   }
+  const clearBtn = $("clear-all");
+  if (clearBtn) clearBtn.style.display = visible.length ? "" : "none";
+  renderHidden(hiddenStreams);
+}
+
+function renderHidden(hiddenStreams) {
+  const wrap = $("hidden-wrap");
+  if (!wrap) return;
+  if (!hiddenStreams.length) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML =
+    `<details class="hidden-dd"><summary>Hidden (${hiddenStreams.length})</summary>` +
+    `<ul class="hidden-list"></ul><button class="restore-all">restore all</button></details>`;
+  const hl = wrap.querySelector(".hidden-list");
+  for (const s of hiddenStreams) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "s-hidden-name";
+    name.textContent = `${s.run_dir} · ${s.kind}`;
+    const restore = document.createElement("button");
+    restore.className = "s-restore"; restore.title = "Restore"; restore.textContent = "↩";
+    restore.onclick = () => { hiddenIds.delete(s.id); saveHidden(); renderStreamList(); };
+    li.appendChild(name); li.appendChild(restore);
+    hl.appendChild(li);
+  }
+  wrap.querySelector(".restore-all").onclick = () => {
+    for (const s of hiddenStreams) hiddenIds.delete(s.id);
+    saveHidden(); renderStreamList();
+  };
 }
 
 async function selectStream(id, kind, li) {
@@ -572,6 +622,11 @@ function buildSettings() {
 }
 
 $("refresh").onclick = loadStreams;
+const clearAllBtn = $("clear-all");
+if (clearAllBtn) clearAllBtn.onclick = () => {
+  for (const s of allStreams) if (!hiddenIds.has(s.id)) hiddenIds.add(s.id);
+  saveHidden(); renderStreamList();
+};
 const bgBtn = $("bg-toggle");
 if (bgBtn) bgBtn.onclick = () => {
   const on = window.LuthiBG ? window.LuthiBG.toggle() : false;
