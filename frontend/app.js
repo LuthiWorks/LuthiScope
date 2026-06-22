@@ -185,16 +185,22 @@ function tooltipPlugin(xlabel) {
       },
       setCursor: (u) => {
         const { idx, left, top } = u.cursor;
-        if (idx == null || left == null || left < 0) { tip.style.display = "none"; return; }
-        const xv = u.data[0][idx];
-        let html = `<div class="u-tip-x">${xlabel} ${gint(xv)}</div>`;
+        if (idx == null || left == null || left < 0 || top == null) { tip.style.display = "none"; return; }
+        // show only the series whose point is nearest the cursor (vertically) at this x
+        let best = -1, bestDist = Infinity;
         for (let si = 1; si < u.series.length; si++) {
-          const s = u.series[si];
           const v = u.data[si][idx];
-          html += `<div class="u-tip-row"><span class="u-tip-dot" style="background:${s.stroke}"></span>` +
-                  `${s.label}: <b>${v == null ? "--" : g(v)}</b></div>`;
+          if (v == null) continue;
+          const py = u.valToPos(v, u.series[si].scale || "y");
+          const d = Math.abs(py - top);
+          if (d < bestDist) { bestDist = d; best = si; }
         }
-        tip.innerHTML = html;
+        if (best < 0) { tip.style.display = "none"; return; }
+        const s = u.series[best], v = u.data[best][idx], xv = u.data[0][idx];
+        tip.innerHTML =
+          `<div class="u-tip-x">${xlabel} ${gint(xv)}</div>` +
+          `<div class="u-tip-row"><span class="u-tip-dot" style="background:${s.stroke}"></span>` +
+          `${s.label}: <b>${g(v)}</b></div>`;
         tip.style.display = "block";
         const tw = tip.offsetWidth, th = tip.offsetHeight;
         let lx = left + 14, ty = top + 14;
