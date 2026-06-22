@@ -220,7 +220,20 @@ html, body {
   background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   padding: 12px 12px 8px; box-shadow: 0 4px 24px rgba(0,0,0,.28);
 }
-.panel-title { color: var(--ink-soft); letter-spacing: 1px; font-size: 11px; font-weight: 700; margin: 0 0 8px 2px; }
+.panel-title { display: flex; justify-content: space-between; align-items: center; color: var(--ink-soft); letter-spacing: 1px; font-size: 11px; font-weight: 700; margin: 0 0 8px 2px; }
+.panel-expand { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+.panel-expand:hover { color: var(--c-opt); animation: icon-pulse 0.7s ease-in-out infinite; }
+
+/* enlarged panel (foreground overlay, translucent so the rest shows behind) */
+.panel.maximized {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 84vw; height: 84vh; margin: 0; z-index: 60; overflow: auto;
+  background: rgba(17, 23, 38, 0.82);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .6); border-color: var(--edge-strong);
+}
+#panel-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.18); opacity: 0; pointer-events: none; transition: opacity .15s; }
+#panel-backdrop.show { opacity: 1; pointer-events: auto; }
 
 /* cursor tooltip */
 .u-tip {

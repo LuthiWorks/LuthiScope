@@ -153,6 +153,7 @@ let charts = [];
 let current = null;
 let ws = null;
 let groupSeries = {};   // group title -> flat list of its visible series
+let maximized = null;   // { panel, rec } of the currently enlarged panel
 
 const $ = (id) => document.getElementById(id);
 
@@ -352,6 +353,7 @@ function panelHasData(spec) {
 }
 
 function buildPanels(kind) {
+  if (maximized) { const b = $("panel-backdrop"); if (b) b.classList.remove("show"); maximized = null; }
   const cfg = GROUPS[kind];
   const host = $("panels");
   host.innerHTML = "";
@@ -380,18 +382,25 @@ function buildPanels(kind) {
     body.className = "group-body panels-grid";
     for (const spec of panels) {
       const panel = document.createElement("div"); panel.className = "panel";
-      const title = document.createElement("div"); title.className = "panel-title"; title.textContent = spec.title;
+      const title = document.createElement("div"); title.className = "panel-title";
+      const titleText = document.createElement("span"); titleText.textContent = spec.title;
+      const expandBtn = document.createElement("button");
+      expandBtn.className = "panel-expand"; expandBtn.title = "Enlarge"; expandBtn.textContent = "⤢";
+      title.appendChild(titleText); title.appendChild(expandBtn);
       panel.appendChild(title);
       const chartHost = document.createElement("div"); panel.appendChild(chartHost);
       body.appendChild(panel);
+      let rec;
       if (spec.type === "heatmap") {
         const hm = makeHeatmap(chartHost, spec, cfg.xlabel);
-        charts.push({ hm, spec, group: grp.title, el: chartHost });
+        rec = { hm, spec, group: grp.title, el: chartHost };
       } else {
         const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
         const u = makeChart(chartHost, spec, cfg.xlabel, width);
-        charts.push({ u, spec, readoutEl, group: grp.title, el: chartHost });
+        rec = { u, spec, readoutEl, group: grp.title, el: chartHost };
       }
+      charts.push(rec);
+      expandBtn.onclick = () => toggleMaximize(panel, rec);
     }
     section.appendChild(body);
     host.appendChild(section);
@@ -409,6 +418,37 @@ function fitCharts() {
     const w = (c.el && c.el.clientWidth) || panelWidth();
     if (w > 0) c.u.setSize({ width: w, height: 200 });
   }
+}
+
+// ---- enlarge a panel to the foreground (translucent overlay, not draggable) ----
+function ensureBackdrop() {
+  let b = $("panel-backdrop");
+  if (!b) { b = document.createElement("div"); b.id = "panel-backdrop"; b.onclick = restoreMaximized; document.body.appendChild(b); }
+  return b;
+}
+function sizeMaximized(rec) {
+  if (rec.hm) { rec.hm.resize(); return; }
+  const w = (rec.el && rec.el.clientWidth) || 600;
+  const h = Math.max(240, Math.round(window.innerHeight * 0.82) - 120);
+  rec.u.setSize({ width: w, height: h });
+}
+function toggleMaximize(panel, rec) {
+  if (maximized && maximized.panel === panel) { restoreMaximized(); return; }
+  if (maximized) restoreMaximized();
+  panel.classList.add("maximized");
+  const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤡"; btn.title = "Reduce"; }
+  ensureBackdrop().classList.add("show");
+  maximized = { panel, rec };
+  requestAnimationFrame(() => sizeMaximized(rec));
+}
+function restoreMaximized() {
+  if (!maximized) return;
+  const { panel, rec } = maximized;
+  panel.classList.remove("maximized");
+  const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤢"; btn.title = "Enlarge"; }
+  const b = $("panel-backdrop"); if (b) b.classList.remove("show");
+  maximized = null;
+  requestAnimationFrame(() => { if (rec.hm) rec.hm.resize(); else if (rec.u) rec.u.setSize({ width: rec.el.clientWidth, height: 200 }); });
 }
 
 function buildVitals(groupTitles) {
@@ -638,6 +678,7 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(fitCharts, 120);
 });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") restoreMaximized(); });
 
 // ---- settings panel ----
 const SETTINGS_SCHEMA = [
