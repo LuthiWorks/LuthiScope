@@ -206,6 +206,38 @@ function tooltipPlugin(xlabel) {
   };
 }
 
+// mouse-wheel zoom on the x (time) axis, centered on the cursor; double-click resets
+function wheelZoomPlugin(factor = 0.85) {
+  return {
+    hooks: {
+      ready: (u) => {
+        const over = u.over;
+        over.addEventListener("wheel", (e) => {
+          if (!e.deltaY) return;
+          e.preventDefault();
+          const xData = u.data[0];
+          if (!xData || xData.length < 2) return;
+          const dataMin = xData[0], dataMax = xData[xData.length - 1];
+          const left = e.clientX - over.getBoundingClientRect().left;
+          const xVal = u.posToVal(left, "x");
+          const oRange = u.scales.x.max - u.scales.x.min;
+          const nRange = e.deltaY < 0 ? oRange * factor : oRange / factor;  // up = zoom in
+          if (nRange >= dataMax - dataMin) { u.setScale("x", { min: dataMin, max: dataMax }); return; }
+          const leftPct = left / over.clientWidth;
+          let nMin = xVal - leftPct * nRange, nMax = nMin + nRange;
+          if (nMin < dataMin) { nMax += dataMin - nMin; nMin = dataMin; }
+          if (nMax > dataMax) { nMin -= nMax - dataMax; nMax = dataMax; }
+          u.setScale("x", { min: nMin, max: nMax });
+        }, { passive: false });
+        over.addEventListener("dblclick", () => {
+          const xData = u.data[0];
+          if (xData && xData.length) u.setScale("x", { min: xData[0], max: xData[xData.length - 1] });
+        });
+      },
+    },
+  };
+}
+
 function makeChart(mountEl, spec, xlabel, widthPx) {
   const series = [{}].concat(
     spec.series.map((s) => ({
@@ -223,7 +255,7 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
     series,
     legend: { show: false },
     cursor: { points: { size: 7 } },
-    plugins: [tooltipPlugin(xlabel)],
+    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin()],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
