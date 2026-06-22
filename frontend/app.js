@@ -353,7 +353,7 @@ function panelHasData(spec) {
 }
 
 function buildPanels(kind) {
-  if (maximized) { const b = $("panel-backdrop"); if (b) b.classList.remove("show"); maximized = null; }
+  if (maximized) { maximized.panel.remove(); const b = $("panel-backdrop"); if (b) b.classList.remove("show"); maximized = null; }
   const cfg = GROUPS[kind];
   const host = $("panels");
   host.innerHTML = "";
@@ -435,18 +435,23 @@ function sizeMaximized(rec) {
 function toggleMaximize(panel, rec) {
   if (maximized && maximized.panel === panel) { restoreMaximized(); return; }
   if (maximized) restoreMaximized();
+  // Move into the root stacking context so the panel is above the backdrop and
+  // actually receives mouse/wheel events (inside #layout its z-index can't escape).
+  const origParent = panel.parentNode, origNext = panel.nextSibling;
+  ensureBackdrop().classList.add("show");
+  document.body.appendChild(panel);
   panel.classList.add("maximized");
   const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤡"; btn.title = "Reduce"; }
-  ensureBackdrop().classList.add("show");
-  maximized = { panel, rec };
+  maximized = { panel, rec, origParent, origNext };
   requestAnimationFrame(() => sizeMaximized(rec));
 }
 function restoreMaximized() {
   if (!maximized) return;
-  const { panel, rec } = maximized;
+  const { panel, rec, origParent, origNext } = maximized;
   panel.classList.remove("maximized");
   const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤢"; btn.title = "Enlarge"; }
   const b = $("panel-backdrop"); if (b) b.classList.remove("show");
+  if (origParent) origParent.insertBefore(panel, origNext);   // back into the grid
   maximized = null;
   requestAnimationFrame(() => { if (rec.hm) rec.hm.resize(); else if (rec.u) rec.u.setSize({ width: rec.el.clientWidth, height: 200 }); });
 }
