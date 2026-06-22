@@ -46,7 +46,6 @@ html, body {
 }
 .brand { display: flex; align-items: center; letter-spacing: 3px; font-weight: 700; color: var(--ink); }
 .brand span { color: var(--c-opt); }
-.brand-logo { height: 24px; width: auto; margin-right: 10px; filter: drop-shadow(0 0 8px rgba(59,130,246,.35)); }
 
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 #bg-toggle {
