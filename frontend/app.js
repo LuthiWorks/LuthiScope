@@ -353,7 +353,7 @@ function panelHasData(spec) {
 }
 
 function buildPanels(kind) {
-  if (maximized) { maximized.panel.remove(); const b = $("panel-backdrop"); if (b) b.classList.remove("show"); maximized = null; }
+  if (maximized) { maximized.panel.remove(); if (maximized.placeholder) maximized.placeholder.remove(); const b = $("panel-backdrop"); if (b) b.classList.remove("show"); maximized = null; }
   const cfg = GROUPS[kind];
   const host = $("panels");
   host.innerHTML = "";
@@ -435,26 +435,30 @@ function sizeMaximized(rec) {
 function toggleMaximize(panel, rec) {
   if (maximized && maximized.panel === panel) { restoreMaximized(); return; }
   if (maximized) restoreMaximized();
-  // Move into the root stacking context so the panel is above the backdrop and
-  // actually receives mouse/wheel events (inside #layout its z-index can't escape).
-  const origParent = panel.parentNode, origNext = panel.nextSibling;
+  // Leave a same-height placeholder so the grid doesn't reflow, then move the panel
+  // into the root stacking context (above the backdrop, so it gets mouse/wheel events).
+  const ph = document.createElement("div");
+  ph.className = "panel-placeholder";
+  ph.style.height = panel.getBoundingClientRect().height + "px";
+  panel.parentNode.insertBefore(ph, panel);
   ensureBackdrop().classList.add("show");
   document.body.appendChild(panel);
   panel.classList.add("maximized");
   const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤡"; btn.title = "Reduce"; }
-  maximized = { panel, rec, origParent, origNext };
+  maximized = { panel, rec, placeholder: ph };
   requestAnimationFrame(() => sizeMaximized(rec));
 }
 function restoreMaximized() {
   if (!maximized) return;
-  const { panel, origParent, origNext } = maximized;
+  const { panel, placeholder } = maximized;
   panel.classList.remove("maximized");
   const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤢"; btn.title = "Enlarge"; }
   const b = $("panel-backdrop"); if (b) b.classList.remove("show");
-  if (origParent) origParent.insertBefore(panel, origNext);   // back into its grid slot
+  if (placeholder && placeholder.parentNode) {   // drop the panel back into its exact slot
+    placeholder.parentNode.insertBefore(panel, placeholder);
+    placeholder.remove();
+  }
   maximized = null;
-  // re-fit every chart: the grid reflowed when this panel left and again now, so
-  // size all of them to their real cell width to avoid any lingering drift.
   requestAnimationFrame(fitCharts);
 }
 

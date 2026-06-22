@@ -232,6 +232,7 @@ html, body {
   backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 24px 80px rgba(0, 0, 0, .6); border-color: var(--edge-strong);
 }
+.panel-placeholder { border: 1px dashed var(--edge); border-radius: 12px; }
 #panel-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.18); opacity: 0; pointer-events: none; transition: opacity .15s; }
 #panel-backdrop.show { opacity: 1; pointer-events: auto; }
 
