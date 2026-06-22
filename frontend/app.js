@@ -447,13 +447,15 @@ function toggleMaximize(panel, rec) {
 }
 function restoreMaximized() {
   if (!maximized) return;
-  const { panel, rec, origParent, origNext } = maximized;
+  const { panel, origParent, origNext } = maximized;
   panel.classList.remove("maximized");
   const btn = panel.querySelector(".panel-expand"); if (btn) { btn.textContent = "⤢"; btn.title = "Enlarge"; }
   const b = $("panel-backdrop"); if (b) b.classList.remove("show");
-  if (origParent) origParent.insertBefore(panel, origNext);   // back into the grid
+  if (origParent) origParent.insertBefore(panel, origNext);   // back into its grid slot
   maximized = null;
-  requestAnimationFrame(() => { if (rec.hm) rec.hm.resize(); else if (rec.u) rec.u.setSize({ width: rec.el.clientWidth, height: 200 }); });
+  // re-fit every chart: the grid reflowed when this panel left and again now, so
+  // size all of them to their real cell width to avoid any lingering drift.
+  requestAnimationFrame(fitCharts);
 }
 
 function buildVitals(groupTitles) {
