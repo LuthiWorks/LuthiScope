@@ -281,9 +281,10 @@ function makeHeatmap(mountEl, spec, xlabel) {
   const canvas = document.createElement("canvas"); canvas.className = "hm-canvas";
   const foot = document.createElement("div"); foot.className = "hm-foot";
   const legend = document.createElement("span"); legend.className = "hm-legend";
-  const readout = document.createElement("span"); readout.className = "hm-readout";
-  foot.appendChild(legend); foot.appendChild(readout);
-  mountEl.appendChild(sel); mountEl.appendChild(canvas); mountEl.appendChild(foot);
+  foot.appendChild(legend);
+  const tip = document.createElement("div"); tip.className = "u-tip"; tip.style.display = "none";
+  mountEl.appendChild(sel); mountEl.appendChild(canvas); mountEl.appendChild(foot); mountEl.appendChild(tip);
+  mountEl.style.position = "relative";
   const ctx = canvas.getContext("2d");
   const LABEL_W = 26;   // left gutter for block-index labels
   let recs = [], metric = spec.metrics[0], frames = [], nBlocks = 0, vmin = 0, vmax = 1;
@@ -327,16 +328,28 @@ function makeHeatmap(mountEl, spec, xlabel) {
     legend.textContent = `${metric}: ${g(vmin)} … ${g(vmax)} · ${nBlocks} blocks × ${frames.length} firings`;
   }
   canvas.addEventListener("mousemove", (e) => {
-    if (!frames.length || !nBlocks) return;
+    if (!frames.length || !nBlocks) { tip.style.display = "none"; return; }
     const r = canvas.getBoundingClientRect();
     const px = (e.clientX - r.left) - LABEL_W;
-    if (px < 0) { readout.textContent = ""; return; }
+    if (px < 0) { tip.style.display = "none"; return; }
     const fi = Math.min(frames.length - 1, Math.max(0, Math.floor(px / ((r.width - LABEL_W) / frames.length))));
     const bi = Math.min(nBlocks - 1, Math.max(0, Math.floor((e.clientY - r.top) / (r.height / nBlocks))));
     const f = frames[fi], v = num(f.substrate_blocks[bi] && f.substrate_blocks[bi][metric]);
-    readout.textContent = `block ${bi} · ${xlabel} ${gint(f.step != null ? f.step : f.cycle)} · ${v == null ? "--" : g(v)}`;
+    const c = v == null ? null : heatColor((v - vmin) / ((vmax - vmin) || 1));
+    const sw = c ? `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})` : "#5d6a80";
+    tip.innerHTML =
+      `<div class="u-tip-x">${xlabel} ${gint(f.step != null ? f.step : f.cycle)}</div>` +
+      `<div class="u-tip-row"><span class="u-tip-dot" style="background:${sw}"></span>` +
+      `block ${bi} · ${metric}: <b>${v == null ? "--" : g(v)}</b></div>`;
+    tip.style.display = "block";
+    const mr = mountEl.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let lx = e.clientX - mr.left + 14, ty = e.clientY - mr.top + 14;
+    if (lx + tw > mountEl.clientWidth) lx = e.clientX - mr.left - tw - 14;
+    if (ty + th > mountEl.clientHeight) ty = e.clientY - mr.top - th - 14;
+    tip.style.left = Math.max(0, lx) + "px"; tip.style.top = Math.max(0, ty) + "px";
   });
-  canvas.addEventListener("mouseleave", () => { readout.textContent = ""; });
+  canvas.addEventListener("mouseleave", () => { tip.style.display = "none"; });
   sel.addEventListener("change", () => { metric = sel.value; compute(); draw(); });
 
   return {
