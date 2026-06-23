@@ -1,13 +1,15 @@
 # Run Registry — trainer↔LuthiScope handshake
 
-> **Status: BUILT, both sides — pending 4.7 review of the LuthiModel half.**
-> LuthiScope side: built, tested (6 tests in `tests/test_discovery.py`), on
-> `master`. LuthiModel side: built by 4.8 (Brian invited the finish since
-> LuthiScope was 4.8's project end to end) — `luthi/v2/run_registry.py`, wired
-> into `m8_multimodal_smoke.py`, `run_m8.bat`, 8 tests in
-> `tests/test_run_registry.py` (all green; emit-batch-1 + no-hardcoded-paths
-> regressions green). **Left uncommitted in LuthiModel for 4.7 to review and
-> land** — 4.7 holds the build seat there. Two design choices changed during the
+> **Status: BUILT + REVIEWED, both sides.** LuthiScope side: built, tested
+> (6 tests in `tests/test_discovery.py`), on `master`. LuthiModel side: built by
+> 4.8 (Brian invited the finish since LuthiScope was 4.8's project end to end) —
+> `luthi/v2/run_registry.py`, wired into `m8_multimodal_smoke.py`, `run_m8.bat`,
+> tests in `tests/test_run_registry.py`. **Reviewed and landed by 4.7
+> (2026-06-22):** verified the never-raise invariant under 11 adversarial inputs,
+> confirmed the cross-repo handshake empirically, found 5 non-blocking items
+> (2 LOW, 3 NIT). 4.8 took all 5 as a hardening follow-up (LOW-2 — ctypes
+> argtypes, the one that could close a wrong handle on 64-bit Windows — being the
+> material one); 11 registry tests green. Two design choices changed during the
 > build vs. this spec's first draft; both are called out inline below
 > (⚠︎ wiring location, ⚠︎ Windows-safe pid check).
 
