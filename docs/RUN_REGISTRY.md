@@ -117,26 +117,42 @@ That's the whole producer side. No new deps required (uses stdlib + optional
 ## Auto-opening LuthiScope from the launcher (decoupled, not in the trainer)
 
 By design "open LuthiScope when training starts" lives in the **run launcher**
-(`.bat`/`.ps1`), *not* in `jepa_runner.py` — so the trainer stays headless-safe
-(cron, CI, SSH) and decoupled from any GUI. Add this near the top of the run
-script, before the `python ... jepa_runner` line:
+(`.bat`), *not* in `jepa_runner.py` — so the trainer stays headless-safe (cron,
+CI, SSH) and decoupled from any GUI.
+
+**Concrete deliverable: create `run_m8.bat` in the LuthiModel repo root.** M8 is
+currently started by typing the bare `python luthi\v2\m8_multimodal_smoke.py`
+command by hand — there is no launcher for it, unlike the older M5/M6/M7 stages
+that each have a `run_*.bat`. So M8 doesn't just *get* the auto-open snippet, it
+needs a launcher file to put it in. This wrapper gives it one and matches how M8
+actually runs today (direct entry point, with `--run-dir` defaulting to
+`runs/m8_multimodal_smoke`):
 
 ```bat
 @echo off
-REM --- open LuthiScope if it isn't already running (best-effort) ---
+REM run_m8.bat -- launch the M8 JEPA run and bring up LuthiScope alongside it.
+REM All args pass through to the trainer, e.g.:  run_m8.bat --run-dir runs\m8_try2
+
+REM --- open LuthiScope if it isn't already running (best-effort, detached) ---
 tasklist /FI "IMAGENAME eq LuthiScope.exe" 2>NUL | find /I "LuthiScope.exe" >NUL
 if errorlevel 1 (
     start "" "C:\Users\Hasha Smokes\Desktop\LuthiWorks\LuthiScope\dist\LuthiScope.exe"
 )
 
-REM --- then launch training as usual ---
+REM --- then launch training as usual (args forwarded) ---
 python luthi\v2\m8_multimodal_smoke.py %*
 ```
 
-`start ""` detaches LuthiScope so it doesn't block the training run, and the
-`tasklist` guard avoids spawning a second window if it's already up. LuthiScope
-boots, reads the registry, and the new run appears with a live ● within a couple
-of seconds — no clicking required.
+`start ""` detaches LuthiScope so it doesn't block the run; the `tasklist` guard
+avoids a second window if it's already up; `%*` forwards every argument
+(`--run-dir`, `--lr`, `--seed`, …) straight through to `m8_multimodal_smoke.py`.
+Once the registry-write lands in `jepa_runner.py`, the new run appears in
+LuthiScope with a live ● within a couple of seconds — no clicking.
+
+> The older `run_m5_*`/`run_m6_*`/`run_m7_*.bat` launchers can get the same
+> three-line auto-open block prepended if you want LuthiScope to come up for those
+> too, but that's optional — M8 is the live stage and the only one that needs it
+> now.
 
 ---
 
@@ -146,6 +162,12 @@ of seconds — no clicking required.
 |------|------|-----------|
 | **LuthiModel** (4.7) | writes `runs.json` on start, removes on exit, prunes dead pids | **producer / writer** |
 | **LuthiScope** (4.8) | reads `runs.json`, merges into discovery, badges live by mtime | **consumer / reader** |
+
+**4.7 checklist (all in LuthiModel):**
+1. Add `luthi/v2/run_registry.py` (the helper above).
+2. Wire `register_run` / `unregister_run` into `jepa_runner.py` (try/finally).
+3. Add `run_m8.bat` in the repo root (the wrapper above).
+That's the whole producer side — no new required deps, no change to LuthiScope.
 
 Read-only invariant intact: the trainer writes only the registry (its own
 announcement) and its own logs; LuthiScope writes neither. Same file-contract
