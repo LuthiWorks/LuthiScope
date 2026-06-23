@@ -16,6 +16,7 @@ import asyncio
 import math
 import sys
 import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -24,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from luthiscope.config import Settings, load_settings
 from luthiscope.ingest.tailer import JsonlFollower
-from luthiscope.server.discovery import discover_streams, streams_map
+from luthiscope.server.discovery import discover_all
 from luthiscope.store.db import COGNITION, TRAINING, Store
 
 if getattr(sys, "frozen", False):  # running inside a PyInstaller bundle
@@ -32,6 +33,19 @@ if getattr(sys, "frozen", False):  # running inside a PyInstaller bundle
 else:
     FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 LIVE_POLL_SECONDS = 0.5
+LIVE_STALE_SECONDS = 30.0  # a stream whose file changed more recently than this is "live"
+
+
+def _is_live(path: Path) -> bool:
+    """True if the source file was written within LIVE_STALE_SECONDS.
+
+    A cheap, read-only liveness signal: an actively-training run appends to its
+    log continuously, so a recent mtime means the producer is alive. We never
+    touch the producer process — only stat its file."""
+    try:
+        return (time.time() - path.stat().st_mtime) < LIVE_STALE_SECONDS
+    except OSError:
+        return False
 
 
 def _scrub_nonfinite(obj):
@@ -76,21 +90,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store.rebuild_run(stream.stream_id, stream.kind, stream.path)
             ingest_mtime[stream.stream_id] = mtime
 
+    def current_streams_map():
+        return {s.stream_id: s for s in discover_all(settings.runs_dir, settings.registry)}
+
     @app.get("/api/streams")
     def list_streams():
         out = []
-        for s in discover_streams(settings.runs_dir):
+        for s in discover_all(settings.runs_dir, settings.registry):
             ensure_ingested(s)
             with lock:
                 n = store.count(s.stream_id, s.kind)
             out.append(
-                {"id": s.stream_id, "run_dir": s.run_dir, "kind": s.kind, "n_records": n}
+                {
+                    "id": s.stream_id,
+                    "run_dir": s.run_dir,
+                    "kind": s.kind,
+                    "n_records": n,
+                    "live": _is_live(s.path),
+                }
             )
         return out
 
     @app.get("/api/streams/{stream_id:path}/records")
     def get_records(stream_id: str):
-        s = streams_map(settings.runs_dir).get(stream_id)
+        s = current_streams_map().get(stream_id)
         if s is None:
             raise HTTPException(status_code=404, detail=f"unknown stream: {stream_id}")
         ensure_ingested(s)
@@ -105,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.websocket("/ws/streams/{stream_id:path}")
     async def live(websocket: WebSocket, stream_id: str):
         await websocket.accept()
-        s = streams_map(settings.runs_dir).get(stream_id)
+        s = current_streams_map().get(stream_id)
         if s is None:
             await websocket.close(code=1008)
             return

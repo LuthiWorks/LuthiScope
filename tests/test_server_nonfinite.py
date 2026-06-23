@@ -56,7 +56,8 @@ def test_records_endpoint_survives_nan(tmp_path):
     (run / "training_log.jsonl").write_text(
         '{"step": 1, "loss": 1.0, "grad_norm": NaN}\n', encoding="utf-8")
     settings = Settings(runs_dir=tmp_path / "runs", home=tmp_path / "home",
-                        host="127.0.0.1", port=8800)
+                        host="127.0.0.1", port=8800,
+                        registry=tmp_path / "runs.json")
     client = TestClient(create_app(settings))
     resp = client.get("/api/streams/r1/training/records")
     assert resp.status_code == 200          # was 500 before the fix

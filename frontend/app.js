@@ -628,8 +628,9 @@ function renderStreamList() {
     const li = document.createElement("li");
     const main = document.createElement("div");
     main.className = "s-main";
+    const liveDot = s.live ? `<span class="live-dot" title="actively logging">●</span>` : "";
     main.innerHTML =
-      `<div class="s-name">${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
+      `<div class="s-name">${liveDot}${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
       `<div class="s-meta">${s.n_records} records</div>`;
     main.onclick = () => selectStream(s.id, s.kind, li);
     const trash = document.createElement("button");
