@@ -27,6 +27,11 @@ const GROUPS = {
         { title: "VALIDATION / PROBE (when emitted)", series: [
           { label: "val_loss", color: C.blue, good: "down", get: (r) => num(r.val_loss) },
           { label: "probe_acc", color: C.green, good: "up", get: (r) => num(r.probe_acc) },
+          // JEPA pilot heldout records (wired 2026-07-18): the trainer
+          // emits {"heldout": {"text": {...}}} at end-of-epoch — these
+          // are the pre-registered evaluation metrics.
+          { label: "heldout_l_pred", color: C.orange, good: "down", get: (r) => num(r.heldout?.text?.l_pred_mean) },
+          { label: "heldout_nmse", color: C.red, good: "down", get: (r) => num(r.heldout?.text?.nmse_mean) },
         ]},
       ]},
       { title: "Optimization", panels: [
@@ -36,11 +41,21 @@ const GROUPS = {
         { title: "LEARNING RATE (when emitted)", series: [
           { label: "lr", color: C.teal, good: null, get: (r) => num(r.lr) },
         ]},
+        { title: "PLASTICITY TAPER (when emitted)", series: [
+          // Schedule, not health (run-3 build, 2026-07-17): declining
+          // to its floor is BY DESIGN — the formative->mature taper.
+          { label: "taper_scale", color: C.purple, good: null, get: (r) => num(r.taper_scale) },
+        ]},
       ]},
       { title: "Substrate vitality", panels: [
         { title: "SUBSTRATE PULSE", series: [
           { label: "pred_frob", color: C.green, good: "up", get: (r) => num(r.substrate?.pred_frob) },
-          { label: "err_acc", color: C.orange, good: "down", get: (r) => num(r.substrate?.err_acc) },
+          // Polarity corrected 2026-07-18 (the kill-6 false-positive
+          // lesson, JEPA pilot): err_acc oscillates healthily and rises
+          // with data variety — direction alone is not health. The
+          // detectors judge it against a smoothed running best; a tile
+          // color cannot, so it makes no claim.
+          { label: "err_acc", color: C.orange, good: null, get: (r) => num(r.substrate?.err_acc) },
         ]},
         { title: "DRIFT & PLASTICITY (when emitted)", series: [
           { label: "set_point_drift", color: C.purple, good: null, get: (r) => num(r.substrate?.set_point_drift) },
@@ -54,11 +69,21 @@ const GROUPS = {
           metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "prediction_norm", "error_acc_mean"] },
       ]},
       { title: "Representation", panels: [
+        // Polarities corrected 2026-07-18 after the JEPA pilot's detector
+        // false-positives (LuthiModel pre-registration, kill-1 and kill-5
+        // amendments): healthy training COMPRESSES std from init scale
+        // (kill-1 fired on a run whose effective rank was RISING), and the
+        // predictor cosine CLIMBING is the substrate solving its
+        // prediction problem, not copying (kill-5's lesson). Direction
+        // alone is not health for either — the level-vs-floor and
+        // rank-corroboration judgments belong to the detectors. The
+        // health-bearing tiles in this group are eff_rank / stable_rank,
+        // whose polarity is real.
         { title: "VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE", series: [
-          { label: "std_p5", color: C.green, good: "up", get: (r) => num(r.light?.online_std_p5) },
-          { label: "std_p50", color: C.teal, good: "up", get: (r) => num(r.light?.online_std_p50) },
-          { label: "std_p95", color: C.gray, good: "up", get: (r) => num(r.light?.online_std_p95) },
-          { label: "triv_cos", color: C.red, good: "down", get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
+          { label: "std_p5", color: C.green, good: null, get: (r) => num(r.light?.online_std_p5) },
+          { label: "std_p50", color: C.teal, good: null, get: (r) => num(r.light?.online_std_p50) },
+          { label: "std_p95", color: C.gray, good: null, get: (r) => num(r.light?.online_std_p95) },
+          { label: "triv_cos", color: C.red, good: null, get: (r) => num(r.light?.predictor_trivial_cosine_mean) },
         ]},
         { title: "DIMENSION · RANK (deep cadence — sparse)", sparse: true, series: [
           { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
