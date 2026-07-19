@@ -25,32 +25,71 @@ def _icon_path() -> str | None:
     return None
 
 
+def _log(settings, msg: str) -> None:
+    """Launcher diagnostics -> <home>/desktop.log. The windowed exe has no
+    console, so this file is the only witness when something fails
+    (added 2026-07-19 debugging the refused-to-connect / Edge-fallback
+    report)."""
+    try:
+        settings.home.mkdir(parents=True, exist_ok=True)
+        with open(settings.home / "desktop.log", "a", encoding="utf-8") as f:
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(stamp + " " + msg + "\n")
+    except OSError:
+        pass
+
+
 def _serve(settings) -> None:
-    import uvicorn
+    try:
+        import uvicorn
 
-    from luthiscope.server.app import create_app
+        from luthiscope.server.app import create_app
 
-    uvicorn.run(
-        create_app(settings),
-        host=settings.host,
-        port=settings.port,
-        log_level="warning",
-    )
+        _log(settings, f"server thread: starting on {settings.host}:{settings.port}")
+        uvicorn.run(
+            create_app(settings),
+            host=settings.host,
+            port=settings.port,
+            log_level="warning",
+            # Skip uvicorn's dictConfig entirely: its default formatter
+            # probes sys.stdout.isatty(), which cannot be trusted to
+            # exist in a windowed app (see run_app's substitution --
+            # this is the second belt on the same trousers).
+            log_config=None,
+        )
+        _log(settings, "server thread: uvicorn returned (unexpected)")
+    except Exception as e:  # noqa: BLE001 -- the log IS the handler
+        import traceback
+
+        _log(settings, "server thread CRASHED: " + str(e) + " :: "
+             + traceback.format_exc().replace("\n", " | "))
 
 
-def _wait_until_up(url: str, tries: int = 60) -> None:
+def _wait_until_up(url: str, tries: int = 120) -> bool:
     import urllib.request
 
     for _ in range(tries):
         try:
             urllib.request.urlopen(url, timeout=0.5)
-            return
+            return True
         except Exception:
             time.sleep(0.25)
+    return False
 
 
 def run_app() -> None:
     import os
+
+    # Windowed (console=False) PyInstaller apps run with sys.stdout and
+    # sys.stderr as None -- and uvicorn's log formatter calls
+    # sys.stdout.isatty() at configuration time, which killed the server
+    # thread on every double-click launch (the 2026-07-19
+    # refused-to-connect report; full traceback in desktop.log).
+    # Substitute safe sinks before anything touches them.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
     from luthiscope.config import load_settings
 
@@ -64,12 +103,17 @@ def run_app() -> None:
         _serve(settings)
         return
 
+    _log(settings, f"launch: frozen={hasattr(sys, '_MEIPASS')} url={url} "
+                   f"runs_dir={settings.runs_dir}")
     threading.Thread(target=_serve, args=(settings,), daemon=True).start()
-    _wait_until_up(url)
+    up = _wait_until_up(url)
+    _log(settings, f"server up: {up}")
 
     # Prefer a native window if pywebview is available; otherwise the browser.
     try:
         import webview  # type: ignore
+
+        _log(settings, "webview imported OK -- native window path")
 
         class _Api:
             """JS bridge: window.pywebview.api.pick_folder() -> native
@@ -93,7 +137,11 @@ def run_app() -> None:
         except TypeError:
             webview.start()  # older pywebview without the icon kwarg
         return
-    except Exception:
+    except Exception as e:
+        import traceback
+
+        _log(settings, "webview path FAILED -> browser fallback: " + str(e)
+             + " :: " + traceback.format_exc().replace("\n", " | "))
         webbrowser.open(url)
         print(f"LuthiScope running at {url} — close this window to stop.")
         try:
