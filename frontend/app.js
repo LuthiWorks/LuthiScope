@@ -701,7 +701,7 @@ async function selectStream(id, kind, li) {
   document.querySelectorAll("#stream-list li").forEach((el) => el.classList.remove("active"));
   if (li) li.classList.add("active");
   current = { id, kind };
-  if (ws) { ws.close(); ws = null; }
+  if (ws) { ws._deliberate = true; ws.close(); ws = null; }
 
   $("now-line").innerHTML = `loading <b>${id}</b> …`;
   const resp = await (await fetch(`/api/streams/${id}/records`)).json();
@@ -713,11 +713,34 @@ async function selectStream(id, kind, li) {
   openLive(id);
 }
 
+// Auto-reconnect (2026-07-18): a dropped socket used to flip the dot to
+// OFFLINE and give up forever — a vitals display that silently freezes
+// while looking calm. Now a lost connection retries with backoff, and on
+// reconnect re-fetches history first so records missed while dark are
+// recovered (the server tail streams appended-after-connect only).
+let reconnectDelay = 2000;
+let reconnectTimer = null;
+
+function scheduleReconnect(id, kind) {
+  if (reconnectTimer) return;
+  setConn("offline", `RECONNECTING in ${Math.round(reconnectDelay / 1000)}s`);
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    if (!current || current.id !== id) return;  // user moved on
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    await selectStream(id, kind, document.querySelector("#stream-list li.active"));
+  }, reconnectDelay);
+}
+
 function openLive(id) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws/streams/${id}`);
-  ws.onopen = () => setConn("live", "LIVE");
-  ws.onclose = () => setConn("offline", "OFFLINE");
+  ws.onopen = () => { reconnectDelay = 2000; setConn("live", "LIVE"); };
+  ws.onclose = (ev) => {
+    if (ev.target._deliberate) return;
+    if (current && current.id === id) scheduleReconnect(id, current.kind);
+    else setConn("offline", "OFFLINE");
+  };
   ws.onerror = () => setConn("offline", "OFFLINE");
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
