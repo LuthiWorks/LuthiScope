@@ -61,12 +61,19 @@ const GROUPS = {
           { label: "set_point_drift", color: C.purple, good: null, get: (r) => num(r.substrate?.set_point_drift) },
           { label: "update_rate", color: C.teal, good: null, get: (r) => num(r.substrate?.update_ema_mean) },
         ]},
+        { title: "CONSOLIDATION FIRES · cumulative (when emitted)", series: [
+          // Memory-becoming-structure events, summed across blocks
+          // (Brian's request 2026-07-18). Monotonic counter; the
+          // interesting shape is WHERE the steps land — calm windows
+          // are consolidation season.
+          { label: "consol_fires", color: C.orange, good: null, get: (r) => num(r.substrate?.consolidation_fires) },
+        ]},
         { title: "PRECISION (when emitted)", series: [
           { label: "precision", color: C.blue, good: null, get: (r) => num(r.substrate?.precision_mean) },
         ]},
         { title: "PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)", type: "heatmap",
           has: (r) => Array.isArray(r.substrate_blocks) && r.substrate_blocks.length > 0,
-          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "prediction_norm", "error_acc_mean"] },
+          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "prediction_norm", "error_acc_mean", "consolidation_fires"] },
       ]},
       { title: "Representation", panels: [
         // Polarities corrected 2026-07-18 after the JEPA pilot's detector
