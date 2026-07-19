@@ -71,7 +71,23 @@ def run_app() -> None:
     try:
         import webview  # type: ignore
 
-        webview.create_window("LuthiScope", url, width=1400, height=900)
+        class _Api:
+            """JS bridge: window.pywebview.api.pick_folder() -> native
+            folder dialog (Settings -> Data Source, 2026-07-19)."""
+
+            def pick_folder(self):
+                try:
+                    win = webview.windows[0]
+                    result = win.create_file_dialog(webview.FOLDER_DIALOG)
+                    if result:
+                        return str(result[0])
+                except Exception:
+                    pass
+                return None
+
+        webview.create_window(
+            "LuthiScope", url, width=1400, height=900, js_api=_Api(),
+        )
         try:
             webview.start(icon=_icon_path())
         except TypeError:

@@ -782,11 +782,59 @@ const SETTINGS_SCHEMA = [
   { type: "checkbox", key: "cursorEmit", label: "Cursor emits fluid" },
 ];
 
-function buildSettings() {
+// Settings rework (2026-07-19, Brian): the gear now opens a general
+// SETTINGS menu -- Data Source (runs-folder picker, native dialog in the
+// desktop app) plus an entry that opens the Background Simulation panel
+// as its own sub-page.
+async function buildSettings() {
+  const panel = $("settings-panel");
+  if (!panel) return;
+  let cfgNow = { runs_dir: "(unavailable)" };
+  try { cfgNow = await (await fetch("/api/config")).json(); } catch (e) {}
+  const inDesktop = !!(window.pywebview && window.pywebview.api);
+  let html = `<div class="settings-head">SETTINGS<button id="settings-close">✕</button></div>`;
+  html += `<div class="settings-cat">Data Source</div>`;
+  html += `<div class="set-row col"><div class="set-rowtop"><span>Training runs folder</span></div>` +
+          `<input type="text" id="runs-dir-input" value="${cfgNow.runs_dir.replace(/"/g, "&quot;")}" spellcheck="false" style="width:100%">` +
+          `<div class="set-rowtop" style="margin-top:6px">` +
+          (inDesktop ? `<button id="runs-dir-browse">Browse…</button>` : `<span style="opacity:.6;font-size:11px">type a path (Browse needs the desktop app)</span>`) +
+          `<button id="runs-dir-apply">Apply</button></div>` +
+          `<div id="runs-dir-status" style="font-size:11px;opacity:.75;margin-top:4px"></div></div>`;
+  html += `<div class="settings-cat">Appearance</div>`;
+  html += `<div class="set-row"><span>Background simulation</span><button id="open-bg-settings">Open ›</button></div>`;
+  panel.innerHTML = html;
+  $("settings-close").onclick = () => panel.classList.remove("open");
+  $("runs-dir-apply").onclick = async () => {
+    const val = $("runs-dir-input").value.trim();
+    const st = $("runs-dir-status");
+    st.textContent = "applying…";
+    try {
+      const resp = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runs_dir: val }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { st.textContent = "✗ " + (data.detail || "invalid folder"); return; }
+      st.textContent = `✓ ${data.streams_found} stream(s) found` + (data.persisted ? " · saved" : "");
+      loadStreams();
+    } catch (e) { st.textContent = "✗ " + e; }
+  };
+  const browse = $("runs-dir-browse");
+  if (browse) browse.onclick = async () => {
+    try {
+      const picked = await window.pywebview.api.pick_folder();
+      if (picked) { $("runs-dir-input").value = picked; $("runs-dir-apply").click(); }
+    } catch (e) { $("runs-dir-status").textContent = "✗ " + e; }
+  };
+  $("open-bg-settings").onclick = () => buildBgSettings();
+}
+
+function buildBgSettings() {
   const panel = $("settings-panel");
   if (!panel || !window.LuthiBG) return;
   const cfg = window.LuthiBG.cfg;
-  let html = `<div class="settings-head">SETTINGS<button id="settings-close">✕</button></div>`;
+  let html = `<div class="settings-head"><button id="settings-back" title="back">‹</button>BACKGROUND<button id="settings-close">✕</button></div>`;
   for (const it of SETTINGS_SCHEMA) {
     if (it.cat) { html += `<div class="settings-cat">${it.cat}</div>`; continue; }
     const val = cfg[it.key];
@@ -801,6 +849,7 @@ function buildSettings() {
     }
   }
   panel.innerHTML = html;
+  $("settings-back").onclick = () => buildSettings();
   panel.querySelectorAll("[data-key]").forEach((el) => {
     const key = el.dataset.key;
     const meta = SETTINGS_SCHEMA.find((s) => s.key === key);

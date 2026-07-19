@@ -71,6 +71,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     app = FastAPI(title="LuthiScope", version="0.1.0")
 
+    # Mutable data-source root (Settings itself stays frozen): the in-app
+    # folder picker (Settings -> Data Source, 2026-07-19) updates this at
+    # runtime and persists the choice via config.save_runs_dir_override.
+    runs_dir_state = {"path": settings.runs_dir}
+
     store = Store(settings.db_path, check_same_thread=False)
     lock = threading.Lock()
     ingest_mtime: dict[str, float] = {}  # stream_id -> source mtime at last ingest
@@ -91,12 +96,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ingest_mtime[stream.stream_id] = mtime
 
     def current_streams_map():
-        return {s.stream_id: s for s in discover_all(settings.runs_dir, settings.registry)}
+        return {s.stream_id: s for s in discover_all(runs_dir_state["path"], settings.registry)}
+
+    @app.get("/api/config")
+    def get_config():
+        return {"runs_dir": str(runs_dir_state["path"])}
+
+    @app.post("/api/config")
+    def set_config(body: dict):
+        """Change the runs directory at runtime (Settings -> Data Source).
+        Validates, applies immediately (discovery is per-request), and
+        persists so the choice survives restarts. Read-only principle
+        intact: we only ever change where we LOOK."""
+        from pathlib import Path as _P
+
+        from luthiscope.config import save_runs_dir_override
+
+        raw = (body or {}).get("runs_dir", "")
+        candidate = _P(str(raw)).expanduser()
+        if not candidate.is_dir():
+            raise HTTPException(status_code=400,
+                                detail=f"not a directory: {candidate}")
+        runs_dir_state["path"] = candidate
+        try:
+            save_runs_dir_override(settings.home, candidate)
+            persisted = True
+        except OSError:
+            persisted = False
+        n = len(discover_all(candidate, settings.registry))
+        return {"runs_dir": str(candidate), "streams_found": n,
+                "persisted": persisted}
 
     @app.get("/api/streams")
     def list_streams():
         out = []
-        for s in discover_all(settings.runs_dir, settings.registry):
+        for s in discover_all(runs_dir_state["path"], settings.registry):
             ensure_ingested(s)
             with lock:
                 n = store.count(s.stream_id, s.kind)
