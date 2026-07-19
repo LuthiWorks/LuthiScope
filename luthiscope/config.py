@@ -69,7 +69,10 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     """
     e = os.environ if env is None else env
     default_registry = str(Path.home() / ".luthiscope" / "runs.json")
-    home = Path(e.get("LUTHISCOPE_HOME", "./.luthiscope")).expanduser()
+    # Home defaults to the USER profile, not the CWD: the packaged app can
+    # be launched from anywhere, and the saved folder choice must follow
+    # the person, not the directory they happened to double-click from.
+    home = Path(e.get("LUTHISCOPE_HOME", str(Path.home() / ".luthiscope"))).expanduser()
     runs_dir = Path(e.get("LUTHISCOPE_RUNS_DIR", "./runs")).expanduser()
     override = load_runs_dir_override(home)
     if override is not None:
