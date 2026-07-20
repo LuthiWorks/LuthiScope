@@ -164,7 +164,10 @@ function seriesStats(ys){
   const mean = sum / v.length;
   let varr = 0; for (const y of v) varr += (y - mean) ** 2;
   const start = v[0], end = v[v.length - 1];
-  const dpct = start !== 0 ? ((end - start) / Math.abs(start)) * 100 : null;
+  // A delta needs two samples: with one point start===end and the badge
+  // would claim "+0.0%" about a trend that doesn't exist yet (the seed45
+  // single-heldout-record confusion, 2026-07-19).
+  const dpct = v.length >= 2 && start !== 0 ? ((end - start) / Math.abs(start)) * 100 : null;
   return { start, end, min, max, range: max - min, std: Math.sqrt(varr / v.length), dpct, n: v.length };
 }
 
