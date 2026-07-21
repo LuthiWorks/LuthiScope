@@ -73,9 +73,17 @@ const GROUPS = {
         { title: "PRECISION (when emitted)", series: [
           { label: "precision", color: C.blue, good: null, get: (r) => num(r.substrate?.precision_mean) },
         ]},
+        // Trust differentiation (v5 relative-trust era, 2026-07-21):
+        // p95/p5 of the per-input reliability ledger, mean across
+        // blocks. ~1.0 = saturated/uniform trust (every pre-v5 family);
+        // >1 = the trust weighting has real differences to act on.
+        // Neutral polarity: spread is a STATE readout, not a score.
+        { title: "TRUST RATIO SPREAD (p95/p5, when emitted)", series: [
+          { label: "precision_spread", color: C.teal, good: null, get: (r) => num(r.substrate?.precision_spread) },
+        ]},
         { title: "PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)", type: "heatmap",
           has: (r) => Array.isArray(r.substrate_blocks) && r.substrate_blocks.length > 0,
-          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "prediction_norm", "error_acc_mean", "consolidation_fires"] },
+          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "precision_spread", "prediction_norm", "error_acc_mean", "consolidation_fires"] },
       ]},
       { title: "Representation", panels: [
         // Polarities corrected 2026-07-18 after the JEPA pilot's detector
