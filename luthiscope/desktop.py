@@ -132,10 +132,21 @@ def run_app() -> None:
         webview.create_window(
             "LuthiScope", url, width=1400, height=900, js_api=_Api(),
         )
+        # private_mode=False + a storage_path under the user profile:
+        # pywebview defaults to private (incognito) mode, which wipes
+        # localStorage on every launch -- discarding the hidden/forgotten
+        # stream lists the frontend persists there (Brian's watch-list
+        # question, 2026-07-21). The profile now lives with the rest of
+        # the user's LuthiScope state.
+        storage = str(settings.home / "webview")
         try:
-            webview.start(icon=_icon_path())
+            webview.start(
+                icon=_icon_path(), private_mode=False, storage_path=storage,
+            )
         except TypeError:
-            webview.start()  # older pywebview without the icon kwarg
+            # Older pywebview without the icon kwarg; storage args exist
+            # since 4.x, so keep persistence in the fallback too.
+            webview.start(private_mode=False, storage_path=storage)
         return
     except Exception as e:
         import traceback
