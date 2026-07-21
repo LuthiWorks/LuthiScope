@@ -24,12 +24,14 @@ const GROUPS = {
           { label: "l_pred", color: C.teal, good: "down", get: (r) => num(r.l_pred) },
           { label: "l_sigreg", color: C.purple, good: "down", get: (r) => num(r.l_sigreg) },
         ]},
-        { title: "VALIDATION / PROBE (when emitted)", series: [
-          { label: "val_loss", color: C.blue, good: "down", get: (r) => num(r.val_loss) },
-          { label: "probe_acc", color: C.green, good: "up", get: (r) => num(r.probe_acc) },
-          // JEPA pilot heldout records (wired 2026-07-18): the trainer
-          // emits {"heldout": {"text": {...}}} at end-of-epoch — these
-          // are the pre-registered evaluation metrics.
+        // Heldout eval fires only at epoch boundaries, so this series is
+        // a handful of points across a 72k-step run: sparse=true draws
+        // visible markers and the line spans the null gaps. The LM-era
+        // val_loss / probe_acc keys were removed 2026-07-21 -- no JEPA
+        // log ever emits them, so the tiles read "no data" forever and
+        // the (invisible) sparse heldout points made the whole panel
+        // look dead (Brian's report).
+        { title: "HELDOUT EVAL (epoch boundaries)", sparse: true, series: [
           { label: "heldout_l_pred", color: C.orange, good: "down", get: (r) => num(r.heldout?.text?.l_pred_mean) },
           { label: "heldout_nmse", color: C.red, good: "down", get: (r) => num(r.heldout?.text?.nmse_mean) },
         ]},
@@ -286,6 +288,10 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
       label: s.label,
       stroke: s.color,
       width: 1.8,
+      // spanGaps: sparse series are mostly nulls (epoch-boundary
+      // records); without it uPlot breaks the line at every gap and
+      // nothing visible gets drawn between the handful of points.
+      spanGaps: !!spec.sparse,
       points: { show: !!spec.sparse, size: 6, stroke: s.color, fill: s.color },
     }))
   );
