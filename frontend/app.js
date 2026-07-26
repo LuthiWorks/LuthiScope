@@ -48,6 +48,18 @@ const GROUPS = {
           // to its floor is BY DESIGN — the formative->mature taper.
           { label: "taper_scale", color: C.purple, good: null, get: (r) => num(r.taper_scale) },
         ]},
+        { title: "WEIGHT NORM (when emitted)", series: [
+          { label: "weight_norm", color: C.blue, good: null, get: (r) => num(r.weight_norm ?? r.param_norm) },
+        ]},
+        { title: "UPDATE / WEIGHT RATIO (when emitted)", series: [
+          { label: "update_ratio", color: C.green, good: null, get: (r) => num(r.update_ratio ?? r.update_to_weight_ratio) },
+        ]},
+        { title: "AMP LOSS SCALE (when emitted)", series: [
+          { label: "loss_scale", color: C.gray, good: null, get: (r) => num(r.loss_scale ?? r.grad_scale ?? r.amp?.loss_scale) },
+        ]},
+        { title: "GRAD-CLIP FRACTION (when emitted)", series: [
+          { label: "clip_frac", color: C.red, good: null, get: (r) => num(r.clip_fraction ?? r.clip_frac ?? r.grad_clip_frac) },
+        ]},
       ]},
       { title: "Substrate vitality", panels: [
         { title: "SUBSTRATE PULSE", series: [
@@ -116,6 +128,95 @@ const GROUPS = {
         ]},
         { title: "ELAPSED (hours)", series: [
           { label: "elapsed_h", color: C.gray, good: null, get: (r) => num(r.elapsed_seconds) == null ? null : r.elapsed_seconds / 3600 },
+        ]},
+        { title: "STEP TIME (when emitted)", series: [
+          { label: "step_time", color: C.orange, good: "down", get: (r) => num(r.step_time ?? r.sec_per_step ?? r.step_seconds) },
+        ]},
+        { title: "RATE · SAMPLES & TOKENS /s (when emitted)", series: [
+          { label: "samples_s", color: C.green, good: "up", get: (r) => num(r.samples_per_sec ?? r.samples_per_second ?? r.throughput) },
+          { label: "tokens_s", color: C.teal, good: "up", get: (r) => num(r.tokens_per_sec ?? r.tokens_per_second) },
+        ]},
+      ]},
+      // ---- universal dead-weights catalog ----
+      // Categories below cover what someone training a conventional
+      // (backprop-only, no living substrate) model would watch — LLM/LRM,
+      // JEPA variants, vision/video, audio, RL — reading the metric keys such
+      // trainers conventionally emit (alias-tolerant per accessor). Panels
+      // auto-hide without data, so a Luthi run shows none of this and a
+      // LLaMA-style run lights up only its own rows; the settings > Metric
+      // panels menu selects which are eligible at all.
+      { title: "Language modeling", panels: [
+        { title: "CROSS-ENTROPY (when emitted)", series: [
+          { label: "ce_loss", color: C.blue, good: "down", get: (r) => num(r.ce_loss ?? r.cross_entropy ?? r.loss_ce ?? r.lm_loss) },
+        ]},
+        { title: "PERPLEXITY (when emitted)", series: [
+          { label: "ppl", color: C.purple, good: "down", get: (r) => num(r.perplexity ?? r.ppl) },
+          { label: "val_ppl", color: C.orange, good: "down", get: (r) => num(r.val_perplexity ?? r.val_ppl ?? r.val?.perplexity) },
+        ]},
+        { title: "TOKEN ACCURACY (when emitted)", series: [
+          { label: "top1", color: C.green, good: "up", get: (r) => num(r.token_accuracy ?? r.token_acc ?? r.acc_top1 ?? r.top1) },
+          { label: "top5", color: C.teal, good: "up", get: (r) => num(r.acc_top5 ?? r.top5) },
+        ]},
+      ]},
+      { title: "Reasoning & RL", panels: [
+        { title: "REWARD (when emitted)", series: [
+          { label: "reward", color: C.green, good: "up", get: (r) => num(r.reward ?? r.reward_mean ?? r.mean_reward) },
+        ]},
+        { title: "SUCCESS / PASS RATE (when emitted)", series: [
+          { label: "success", color: C.blue, good: "up", get: (r) => num(r.success_rate ?? r.pass_rate ?? r.pass_at_1 ?? r.solve_rate) },
+        ]},
+        { title: "KL TO REFERENCE (when emitted)", series: [
+          { label: "kl", color: C.orange, good: null, get: (r) => num(r.kl ?? r.kl_ref ?? r.kl_divergence) },
+        ]},
+        { title: "POLICY ENTROPY (when emitted)", series: [
+          { label: "entropy", color: C.purple, good: null, get: (r) => num(r.entropy ?? r.policy_entropy) },
+        ]},
+        { title: "RESPONSE / EPISODE LENGTH (when emitted)", series: [
+          { label: "length", color: C.gray, good: null, get: (r) => num(r.response_length ?? r.gen_length ?? r.episode_length) },
+        ]},
+      ]},
+      { title: "Vision & video", panels: [
+        { title: "RECONSTRUCTION LOSS (when emitted)", series: [
+          { label: "recon", color: C.blue, good: "down", get: (r) => num(r.recon_loss ?? r.l_recon ?? r.reconstruction_loss) },
+        ]},
+        { title: "PSNR / SSIM (when emitted)", series: [
+          { label: "psnr", color: C.green, good: "up", get: (r) => num(r.psnr) },
+          { label: "ssim", color: C.teal, good: "up", get: (r) => num(r.ssim) },
+        ]},
+        { title: "FID (eval cadence — sparse, when emitted)", sparse: true, series: [
+          { label: "fid", color: C.red, good: "down", get: (r) => num(r.fid) },
+        ]},
+        { title: "VQ CODEBOOK USAGE (when emitted)", series: [
+          { label: "codebook", color: C.purple, good: "up", get: (r) => num(r.codebook_usage ?? r.vq_perplexity ?? r.codebook_perplexity) },
+        ]},
+      ]},
+      { title: "Audio", panels: [
+        { title: "SI-SNR (when emitted)", series: [
+          { label: "si_snr", color: C.green, good: "up", get: (r) => num(r.si_snr ?? r.sisnr) },
+        ]},
+        { title: "MEL / STFT LOSS (when emitted)", series: [
+          { label: "mel", color: C.blue, good: "down", get: (r) => num(r.mel_loss) },
+          { label: "stft", color: C.teal, good: "down", get: (r) => num(r.stft_loss) },
+        ]},
+      ]},
+      { title: "Evaluation", panels: [
+        { title: "VALIDATION LOSS (when emitted)", series: [
+          { label: "val_loss", color: C.orange, good: "down", get: (r) => num(r.val_loss ?? r.valid_loss ?? r.val?.loss ?? r.eval?.loss) },
+        ]},
+        { title: "ACCURACY (when emitted)", series: [
+          { label: "train_acc", color: C.teal, good: "up", get: (r) => num(r.train_accuracy ?? r.train_acc ?? r.accuracy) },
+          { label: "val_acc", color: C.green, good: "up", get: (r) => num(r.val_accuracy ?? r.val_acc ?? r.eval?.accuracy) },
+        ]},
+      ]},
+      { title: "Systems & resources", panels: [
+        { title: "GPU MEMORY (when emitted)", series: [
+          { label: "gpu_mem", color: C.blue, good: null, get: (r) => num(r.gpu_mem_gb ?? r.gpu_memory_gb ?? r.mem_allocated_gb ?? r.gpu_mem) },
+        ]},
+        { title: "GPU UTILIZATION (when emitted)", series: [
+          { label: "gpu_util", color: C.green, good: null, get: (r) => num(r.gpu_util ?? r.gpu_utilization) },
+        ]},
+        { title: "MFU (when emitted)", series: [
+          { label: "mfu", color: C.purple, good: "up", get: (r) => num(r.mfu ?? r.model_flops_util) },
         ]},
       ]},
     ],
@@ -290,6 +391,59 @@ function wheelZoomPlugin(factor = 0.85) {
   };
 }
 
+// true when the x window is narrower than the data (i.e., the user zoomed in)
+function xIsZoomed(u) {
+  const xData = u.data[0];
+  if (!xData || xData.length < 2) return false;
+  const full = xData[xData.length - 1] - xData[0];
+  return full > 0 && (u.scales.x.max - u.scales.x.min) < full * 0.999;
+}
+
+// drag-to-pan once zoomed: plain drag slides the visible x-window (clamped to
+// the data). Only active when zoomed — at full view there is nothing to pan, so
+// plain drag keeps uPlot's built-in select-zoom. Shift+drag select-zooms even
+// while zoomed (the escape hatch back to box-zoom). uPlot's own mousedown is
+// suppressed for pan drags via cursor.bind in makeChart, not here — two
+// listeners on the same element can't reliably pre-empt each other.
+function dragPanPlugin() {
+  return {
+    hooks: {
+      ready: (u) => {
+        const over = u.over;
+        let dragging = false;
+        over.addEventListener("mousemove", (e) => {
+          if (!dragging) over.style.cursor = xIsZoomed(u) && !e.shiftKey ? "grab" : "";
+        });
+        over.addEventListener("mousedown", (e) => {
+          if (e.button !== 0 || e.shiftKey || !xIsZoomed(u)) return;
+          e.preventDefault();
+          dragging = true;
+          over.style.cursor = "grabbing";
+          const xData = u.data[0];
+          const dataMin = xData[0], dataMax = xData[xData.length - 1];
+          const startX = e.clientX;
+          const startMin = u.scales.x.min, range = u.scales.x.max - u.scales.x.min;
+          const pxToVal = range / over.clientWidth;
+          const move = (ev) => {
+            let nMin = startMin - (ev.clientX - startX) * pxToVal;
+            if (nMin < dataMin) nMin = dataMin;
+            if (nMin + range > dataMax) nMin = dataMax - range;
+            u.setScale("x", { min: nMin, max: nMin + range });
+          };
+          const up = () => {
+            dragging = false;
+            over.style.cursor = xIsZoomed(u) ? "grab" : "";
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+          };
+          window.addEventListener("mousemove", move);
+          window.addEventListener("mouseup", up);
+        });
+      },
+    },
+  };
+}
+
 function makeChart(mountEl, spec, xlabel, widthPx) {
   const series = [{}].concat(
     spec.series.map((s) => ({
@@ -310,8 +464,18 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
     axes: [Object.assign(axisStyle(), { label: xlabel }), axisStyle()],
     series,
     legend: { show: false },
-    cursor: { points: { size: 7 } },
-    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin()],
+    cursor: {
+      points: { size: 7 },
+      // hand plain-drag-while-zoomed to dragPanPlugin; everything else
+      // (full-view drag, shift+drag) keeps uPlot's built-in select-zoom
+      bind: {
+        mousedown: (u, targ, handler) => (e) => {
+          if (e.button === 0 && !e.shiftKey && xIsZoomed(u)) return null;
+          return handler(e);
+        },
+      },
+    },
+    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin()],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
@@ -415,6 +579,25 @@ function makeHeatmap(mountEl, spec, xlabel) {
   };
 }
 
+// ---- metric selection (settings > Metric panels) ----
+// Everything in GROUPS is enabled by default; only the DISABLED ids persist, so
+// catalog additions appear without anyone touching settings. Heatmap panels
+// toggle whole ("*"); series panels toggle per metric label.
+const METRICS_KEY = "luthiscope.disabledMetrics";
+function loadDisabledMetrics() { try { return new Set(JSON.parse(localStorage.getItem(METRICS_KEY) || "[]")); } catch (e) { return new Set(); } }
+function saveDisabledMetrics() { try { localStorage.setItem(METRICS_KEY, JSON.stringify([...disabledMetrics])); } catch (e) {} }
+let disabledMetrics = loadDisabledMetrics();
+const metricId = (kind, group, panel, label) => `${kind}|${group}|${panel}|${label}`;
+const metricEnabled = (id) => !disabledMetrics.has(id);
+
+// Reduce a panel spec to its enabled series (shallow copy so the declarative
+// catalog stays untouched); null when the whole panel is deselected.
+function filterPanelByPrefs(kind, group, spec) {
+  if (spec.type === "heatmap") return metricEnabled(metricId(kind, group, spec.title, "*")) ? spec : null;
+  const series = spec.series.filter((s) => metricEnabled(metricId(kind, group, spec.title, s.label)));
+  return series.length ? Object.assign({}, spec, { series }) : null;
+}
+
 function panelHasData(spec) {
   if (spec.type === "heatmap") return records.some(spec.has);
   return spec.series.some((s) => records.some((r) => s.get(r) != null));
@@ -431,8 +614,10 @@ function buildPanels(kind) {
   const width = panelWidth();
   const visibleTitles = [];
   for (const grp of cfg.groups) {
-    const panels = grp.panels.filter(panelHasData);
-    if (!panels.length) continue;            // hide empty groups (no data yet)
+    const panels = grp.panels
+      .map((p) => filterPanelByPrefs(kind, grp.title, p))
+      .filter((p) => p && panelHasData(p));
+    if (!panels.length) continue;            // hide empty/deselected groups
     visibleTitles.push(grp.title);
     groupSeries[grp.title] = panels.flatMap((p) => p.series || []);
 
@@ -817,10 +1002,13 @@ async function buildSettings() {
           (inDesktop ? `<button id="runs-dir-browse">Browse…</button>` : `<span style="opacity:.6;font-size:11px">type a path (Browse needs the desktop app)</span>`) +
           `<button id="runs-dir-apply">Apply</button></div>` +
           `<div id="runs-dir-status" style="font-size:11px;opacity:.75;margin-top:4px"></div></div>`;
+  html += `<div class="settings-cat">Display</div>`;
+  html += `<div class="set-row"><span>Metric panels</span><button id="open-metric-settings">Open ›</button></div>`;
   html += `<div class="settings-cat">Appearance</div>`;
   html += `<div class="set-row"><span>Background simulation</span><button id="open-bg-settings">Open ›</button></div>`;
   panel.innerHTML = html;
   $("settings-close").onclick = () => panel.classList.remove("open");
+  $("open-metric-settings").onclick = () => buildMetricSettings();
   $("runs-dir-apply").onclick = async () => {
     const val = $("runs-dir-input").value.trim();
     const st = $("runs-dir-status");
@@ -845,6 +1033,77 @@ async function buildSettings() {
     } catch (e) { $("runs-dir-status").textContent = "✗ " + e; }
   };
   $("open-bg-settings").onclick = () => buildBgSettings();
+}
+
+// Metric selection sub-page: every category/panel/metric in GROUPS, with a
+// master checkbox per category. Deselecting hides a metric even when its data
+// exists; panels with no data auto-hide regardless (so most of the universal
+// catalog is invisible until a run actually emits those keys).
+function buildMetricSettings() {
+  const panel = $("settings-panel");
+  if (!panel) return;
+  const KIND_LABEL = { training: "Training", cognition: "Cognition" };
+  let html = `<div class="settings-head"><button id="settings-back" title="back">‹</button>METRIC PANELS<button id="settings-close">✕</button></div>`;
+  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels without data auto-hide either way.</div>`;
+  for (const kind in GROUPS) {
+    html += `<div class="settings-cat">${KIND_LABEL[kind] || kind} metrics</div>`;
+    for (const grp of GROUPS[kind].groups) {
+      const ids = grp.panels.flatMap((p) => p.type === "heatmap"
+        ? [metricId(kind, grp.title, p.title, "*")]
+        : p.series.map((s) => metricId(kind, grp.title, p.title, s.label)));
+      const on = ids.filter(metricEnabled).length;
+      html += `<div class="set-group"><label class="set-group-head">` +
+        `<input type="checkbox" class="cat-master" data-kind="${kind}" data-group="${grp.title}"` +
+        ` ${on === ids.length ? "checked" : ""} ${on > 0 && on < ids.length ? "data-mixed=1" : ""}>` +
+        `<b>${grp.title}</b></label></div>`;
+      for (const p of grp.panels) {
+        if (p.type === "heatmap") {
+          const id = metricId(kind, grp.title, p.title, "*");
+          html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
+            ` ${metricEnabled(id) ? "checked" : ""}><span>${p.title}</span><em>heatmap</em></label>`;
+        } else {
+          for (const s of p.series) {
+            const id = metricId(kind, grp.title, p.title, s.label);
+            html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
+              ` ${metricEnabled(id) ? "checked" : ""}><span>${s.label}</span><em>${p.title}</em></label>`;
+          }
+        }
+      }
+    }
+  }
+  panel.innerHTML = html;
+  panel.querySelectorAll(".cat-master[data-mixed]").forEach((el) => { el.indeterminate = true; });
+  const rebuild = () => { if (current) { buildPanels(current.kind); refreshData(); } };
+  panel.querySelectorAll("[data-mid]").forEach((el) => {
+    el.addEventListener("change", () => {
+      const id = el.dataset.mid;
+      if (el.checked) disabledMetrics.delete(id); else disabledMetrics.add(id);
+      saveDisabledMetrics(); rebuild();
+      // keep the category master's state honest without a full re-render
+      const [kind, group] = id.split("|");
+      const master = panel.querySelector(`.cat-master[data-kind="${kind}"][data-group="${group}"]`);
+      if (master) {
+        const boxes = [...panel.querySelectorAll("[data-mid]")].filter((b) => b.dataset.mid.startsWith(`${kind}|${group}|`));
+        const on = boxes.filter((b) => b.checked).length;
+        master.checked = on === boxes.length;
+        master.indeterminate = on > 0 && on < boxes.length;
+      }
+    });
+  });
+  panel.querySelectorAll(".cat-master").forEach((el) => {
+    el.addEventListener("change", () => {
+      const { kind, group } = el.dataset;
+      el.indeterminate = false;
+      panel.querySelectorAll("[data-mid]").forEach((b) => {
+        if (!b.dataset.mid.startsWith(`${kind}|${group}|`)) return;
+        b.checked = el.checked;
+        if (el.checked) disabledMetrics.delete(b.dataset.mid); else disabledMetrics.add(b.dataset.mid);
+      });
+      saveDisabledMetrics(); rebuild();
+    });
+  });
+  $("settings-back").onclick = () => buildSettings();
+  $("settings-close").onclick = () => panel.classList.remove("open");
 }
 
 function buildBgSettings() {
