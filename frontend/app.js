@@ -255,6 +255,57 @@ const GROUPS = {
   },
 };
 
+// Hover explanations for every panel, in plain language with jargon glossed in
+// parentheses (Brian, 2026-07-25). Keyed "group|panel title" — keys must match
+// GROUPS exactly; a missing key just means no tooltip, never an error.
+const PANEL_DESCS = {
+  "Learning|LOSS": "How wrong the model's predictions are right now (loss = the error score training tries to shrink). l_pred is the prediction part, l_sigreg is the anti-collapse penalty (a guard that stops the model from outputting the same thing for everything). Falling is good.",
+  "Learning|HELDOUT EVAL (epoch boundaries)": "A test on material the model never trains on (heldout = kept out of training), run once per epoch (one full pass through the data). The honest measure of learning, as opposed to memorizing. Sparse dots, not a continuous line.",
+  "Optimization|GRADIENT NORM (when emitted)": "The overall size of the correction signal each step (gradient = the direction and amount training wants to change each weight). Sudden spikes can mean instability; a slow settle is normal.",
+  "Optimization|LEARNING RATE (when emitted)": "How big a step the optimizer takes on each update (learning rate = the step-size dial; schedules often warm it up, then decay it). A schedule readout, not a health signal.",
+  "Optimization|PLASTICITY TAPER (when emitted)": "A schedule that gradually reduces how changeable the living weights are — a formative, highly plastic youth easing into a stable maturity. It is SUPPOSED to fall.",
+  "Optimization|WEIGHT NORM (when emitted)": "The total size of all the model's weights added up (norm = a single number summarizing magnitude). Steady growth is normal; runaway growth can mean the model is inflating instead of learning.",
+  "Optimization|UPDATE / WEIGHT RATIO (when emitted)": "How large each update is compared to the weights it changes. A classic tuning gauge: too high and training thrashes, too low and it crawls.",
+  "Optimization|AMP LOSS SCALE (when emitted)": "A safety multiplier used when training in low-precision numbers (AMP = automatic mixed precision, a speed trick). It auto-adjusts; frequent collapses to tiny values mean numeric trouble.",
+  "Optimization|GRAD-CLIP FRACTION (when emitted)": "How often the correction signal was so large it had to be capped (gradient clipping = a limiter that prevents any single step from being violent). Frequently high means training is straining against the limiter.",
+  "Substrate vitality|SUBSTRATE PULSE": "The living substrate's heartbeat: pred_frob is how much predictive structure the self-modifying layers have built (rising = building), err_acc is their accumulated prediction error (it oscillates healthily — direction alone is not health).",
+  "Substrate vitality|DRIFT & PLASTICITY (when emitted)": "How far the living weights have wandered from their homeostatic set point (the baseline they are gently pulled back toward), and how actively they are self-modifying right now. Learning looks like drift with activity; consolidation looks like both easing.",
+  "Substrate vitality|CONSOLIDATION FIRES · cumulative (when emitted)": "A running count of consolidation events — moments where recent experience gets locked into lasting structure (memory becoming anatomy). The interesting shape is where the steps land: calm windows are consolidation season.",
+  "Substrate vitality|PRECISION (when emitted)": "How confident the living layers are in their own predictions (precision = confidence weighting; higher means the substrate trusts what it expects to see). Climbs as its world-model sharpens.",
+  "Substrate vitality|TRUST RATIO SPREAD (p95/p5, when emitted)": "Whether the substrate trusts some inputs more than others (relative trust, the v5 mechanism). Near 1.0 = it treats everything the same; above 1 = it has real preferences. A state readout, not a score.",
+  "Substrate vitality|PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)": "The same substrate vitals, but shown for each block (block = one layer-like unit) as colored rows over time — so a single struggling block stands out even when the average looks fine.",
+  "Representation|VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE": "Anti-collapse vitals. std = how varied the model's internal descriptions are (all-identical outputs would be collapse); triv_cos = how close the predictor is to just copying its input (1.0 = copying, the trivial cheat). Levels matter more than direction here.",
+  "Representation|DIMENSION · RANK (deep cadence — sparse)": "How many independent dimensions of description the model actually uses (effective rank = the working size of its vocabulary of ideas). A sustained drop means its representation is thinning out. Measured rarely — sparse dots.",
+  "Throughput|TOKENS CONSUMED": "Total amount of data seen so far, in tokens (token = one small chunk of text/audio/image the model reads at a time). A straight-line odometer.",
+  "Throughput|ELAPSED (hours)": "Wall-clock time since the run started. Pure bookkeeping.",
+  "Throughput|STEP TIME (when emitted)": "How long each training step takes. Creeping upward can mean a leak or thermal throttling; spikes mean stalls (often disk or data loading).",
+  "Throughput|RATE · SAMPLES & TOKENS /s (when emitted)": "Training speed: how many examples and tokens are processed per second. The efficiency gauge — flat and high is the goal.",
+  "Language modeling|CROSS-ENTROPY (when emitted)": "The standard next-token training error for language models (cross-entropy = how surprised the model is by the correct next word). Falling is good.",
+  "Language modeling|PERPLEXITY (when emitted)": "Cross-entropy re-expressed as a branching factor (perplexity = roughly, how many words the model is torn between; 1 would be certainty). Lower is better; val_ppl is the same measured on unseen data.",
+  "Language modeling|TOKEN ACCURACY (when emitted)": "How often the model's top guess for the next token is exactly right (top1), or within its best five guesses (top5). Higher is better.",
+  "Reasoning & RL|REWARD (when emitted)": "The average score the model earns per attempt (reward = the signal reinforcement learning maximizes). Rising means the policy is improving — or gaming the reward; corroborate with success rate.",
+  "Reasoning & RL|SUCCESS / PASS RATE (when emitted)": "Fraction of tasks actually solved (pass@1 = solved on the first try). The ground-truth cousin of reward.",
+  "Reasoning & RL|KL TO REFERENCE (when emitted)": "How far the model has drifted from its reference version (KL divergence = a distance between two models' behavior). Some drift is the point; runaway drift means it is forgetting what it was.",
+  "Reasoning & RL|POLICY ENTROPY (when emitted)": "How much the model still explores versus always picking the same answer (entropy = randomness in its choices). Collapsing to zero early means it stopped exploring.",
+  "Reasoning & RL|RESPONSE / EPISODE LENGTH (when emitted)": "How long the model's answers or episodes run. Watch for drift — reward hacking often shows up as answers ballooning or shriveling.",
+  "Vision & video|RECONSTRUCTION LOSS (when emitted)": "How badly the model redraws what it was shown (reconstruction = compress the image/video, then rebuild it; the error is what was lost). Falling is good.",
+  "Vision & video|PSNR / SSIM (when emitted)": "Standard picture-quality scores comparing output to the original: PSNR (signal-to-noise, in dB) and SSIM (structural similarity, 0-1). Higher is better for both.",
+  "Vision & video|FID (eval cadence — sparse, when emitted)": "How distinguishable generated images are from real ones, statistically (FID = Fréchet Inception Distance; 0 would be indistinguishable). Lower is better. Computed rarely — sparse dots.",
+  "Vision & video|VQ CODEBOOK USAGE (when emitted)": "How much of the model's visual vocabulary is actually in use (codebook = the fixed set of visual 'words' a VQ model can pick from). Low usage means most of the vocabulary sits dead.",
+  "Audio|SI-SNR (when emitted)": "Audio clarity score: how cleanly the target sound stands out from the error (scale-invariant signal-to-noise ratio, in dB). Higher is better.",
+  "Audio|MEL / STFT LOSS (when emitted)": "Spectrogram errors — how different the produced audio's frequency picture is from the target's (mel/STFT = two standard ways of turning sound into a frequency image). Falling is good.",
+  "Evaluation|VALIDATION LOSS (when emitted)": "The training error measured on data the model never trains on (validation set). If training loss falls while this rises, the model is memorizing, not learning (overfitting).",
+  "Evaluation|ACCURACY (when emitted)": "Fraction of answers correct, on training data (train_acc) and unseen data (val_acc). A widening gap between the two is the classic overfitting signature.",
+  "Systems & resources|GPU MEMORY (when emitted)": "How much video memory the run occupies. Creeping upward across hours usually means a leak; hitting the ceiling means crashes ahead.",
+  "Systems & resources|GPU UTILIZATION (when emitted)": "How busy the GPU is. Sustained dips mean the GPU is starving — usually waiting on data loading or CPU work.",
+  "Systems & resources|MFU (when emitted)": "Fraction of the hardware's theoretical peak math throughput actually achieved (MFU = model FLOPs utilization). The efficiency grade: big well-tuned runs reach 40-60%.",
+  "Internal state|PRECISION & VALUE (active-inference correlates)": "The mind's confidence and outlook: gamma is how decisively it commits to a plan (policy precision), v_s is how good it expects its current situation to be (value estimate).",
+  "Internal state|EXPECTED FREE ENERGY · affect-adjacent (lower = better)": "The quantity the mind minimizes when choosing actions (expected free energy = predicted surprise plus predicted cost — loosely, unease). The components are the costs it weighs: engagement, coherence, connection, truthfulness. Lower is better.",
+  "Dynamics|PLASTICITY PULSE · ||Δθ||": "How much the living weights moved this cycle (Δθ = the change in the weights themselves — the mind physically changing as it thinks). The cognition-side heartbeat.",
+  "Dynamics|MUTUAL INFORMATION + BAND": "How much the mind's internal state actually reflects its input (mutual information = statistical coupling between world and mind), with its expected healthy band. Falling out of band means decoupling.",
+  "Dynamics|BEST-ACTION VALUE · r_best": "The score of the best action the planner found this cycle. Persistently low means nothing looks appealing — including rest.",
+};
+
 function f2(v){ return v==null?"--":Number(v).toFixed(2); }
 function f3(v){ return v==null?"--":Number(v).toFixed(3); }
 function f4(v){ return v==null?"--":Number(v).toFixed(4); }
@@ -643,6 +694,8 @@ function buildPanels(kind) {
     for (const spec of panels) {
       const panel = document.createElement("div"); panel.className = "panel";
       const title = document.createElement("div"); title.className = "panel-title";
+      const desc = PANEL_DESCS[`${grp.title}|${spec.title}`];
+      if (desc) title.title = desc;
       const titleText = document.createElement("span"); titleText.textContent = spec.title;
       const expandBtn = document.createElement("button");
       expandBtn.className = "panel-expand"; expandBtn.title = "Enlarge"; expandBtn.textContent = "⤢";
