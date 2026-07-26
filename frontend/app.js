@@ -500,11 +500,19 @@ function dragPanPlugin() {
           const startX = e.clientX;
           const startMin = u.scales.x.min, range = u.scales.x.max - u.scales.x.min;
           const pxToVal = range / over.clientWidth;
+          // Freeze the y-window at grab time: without this, uPlot re-fits y
+          // to the visible data on every x change, so the viewport "breathes"
+          // with local variance while panning (Brian's report, 2026-07-26).
+          // The window is a free-floating frame you slide, not a tracker.
+          const yMin = u.scales.y.min, yMax = u.scales.y.max;
           const move = (ev) => {
             let nMin = startMin - (ev.clientX - startX) * pxToVal;
             if (nMin < dataMin) nMin = dataMin;
             if (nMin + range > dataMax) nMin = dataMax - range;
-            u.setScale("x", { min: nMin, max: nMin + range });
+            u.batch(() => {
+              u.setScale("x", { min: nMin, max: nMin + range });
+              u.setScale("y", { min: yMin, max: yMax });
+            });
           };
           const up = () => {
             dragging = false;
