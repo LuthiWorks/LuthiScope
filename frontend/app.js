@@ -978,10 +978,18 @@ const SETTINGS_SCHEMA = [
     options: [["aurora", "Aurora"], ["ember", "Ember"], ["ice", "Ice"], ["spectrum", "Spectrum"], ["mono", "Mono"]] },
   { type: "range", key: "intensity", label: "Intensity", min: 0.3, max: 2, step: 0.1 },
   { type: "range", key: "trail", label: "Trail length", min: 0.95, max: 0.996, step: 0.002 },
-  { type: "range", key: "clickCount", label: "Objects per click", min: 1, max: 5, step: 1, parse: Number },
+  { type: "range", key: "clickCount", label: "Objects per click", min: 0, max: 5, step: 1, parse: Number, note: "0 = off" },
+  { type: "range", key: "clickMax", label: "Max click objects", min: 0, max: 5, step: 1, parse: Number, note: "concurrent cap" },
   { type: "range", key: "autoObjects", label: "Continuous objects", min: 0, max: 5, step: 1, parse: Number, note: "0 = off" },
   { type: "range", key: "edgeEmit", label: "Edge emitters", min: 0, max: 4, step: 1, parse: Number, note: "0 = off" },
   { type: "checkbox", key: "cursorEmit", label: "Cursor emits fluid" },
+  { cat: "Liquid Behavior" },
+  { type: "range", key: "vorticity", label: "Swirl (vorticity)", min: 0, max: 20, step: 0.5, note: "0 = laminar" },
+  { type: "range", key: "simSpeed", label: "Flow speed", min: 0.5, max: 2, step: 0.05 },
+  { type: "range", key: "plumeSize", label: "Plume size", min: 1, max: 4, step: 1, parse: Number },
+  { type: "range", key: "stirStrength", label: "Stir strength", min: 0.05, max: 0.5, step: 0.01, note: "objects push the fluid" },
+  { type: "range", key: "objSpeed", label: "Launch speed", min: 0.5, max: 2, step: 0.05 },
+  { type: "range", key: "objDrag", label: "Object drag", min: 0.01, max: 0.1, step: 0.005, note: "higher = shorter-lived" },
 ];
 
 // Settings rework (2026-07-19, Brian): the gear now opens a general
@@ -1141,6 +1149,27 @@ function buildBgSettings() {
     el.addEventListener(el.type === "range" ? "input" : "change", apply);
   });
   $("settings-close").onclick = () => panel.classList.remove("open");
+}
+
+// collapsible streams rail (Brian, 2026-07-25): slides into the window edge —
+// not an overlay like settings — with the LuthiWorks logo staying in the corner.
+const SIDEBAR_KEY = "luthiscope.sidebarCollapsed";
+const sideEl = $("sidebar"), sideBtn = $("sidebar-toggle");
+function applySidebar(collapsed) {
+  sideEl.classList.toggle("collapsed", collapsed);
+  if (sideBtn) {
+    sideBtn.textContent = collapsed ? "⟩" : "⟨";
+    sideBtn.title = collapsed ? "Expand streams panel" : "Collapse streams panel";
+  }
+  setTimeout(fitCharts, 240);   // charts take over the freed width after the slide
+}
+if (sideBtn && sideEl) {
+  sideBtn.onclick = () => {
+    const c = !sideEl.classList.contains("collapsed");
+    try { localStorage.setItem(SIDEBAR_KEY, c ? "1" : "0"); } catch (e) {}
+    applySidebar(c);
+  };
+  try { if (localStorage.getItem(SIDEBAR_KEY) === "1") applySidebar(true); } catch (e) {}
 }
 
 $("refresh").onclick = loadStreams;

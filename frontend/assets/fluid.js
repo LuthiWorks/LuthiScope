@@ -18,10 +18,18 @@
     palette: "aurora",  // aurora | ember | ice | spectrum | mono
     intensity: 1.0,     // dye brightness 0.3..2
     trail: 0.985,       // dye persistence (FADE) 0.95..0.996
-    clickCount: 1,      // objects launched per click 1..5
+    clickCount: 1,      // objects launched per click 0..5 (0 = clicks inert)
+    clickMax: 5,        // concurrent cap on click-spawned objects 0..5
     autoObjects: 0,     // maintain N autonomous objects 0..5 (0 = off)
     edgeEmit: 0,        // constant emitters from N edges 0..4 (0 = off)
     cursorEmit: false,  // persistent cursor emitter
+    // liquid behavior (2026-07-25, Brian's request for more customizability)
+    vorticity: 8,       // swirl strength 0..20 (Fedkiw confinement epsilon)
+    simSpeed: 1,        // timestep multiplier 0.5..2 (semi-Lagrangian: stays stable)
+    plumeSize: 2,       // injection radius in cells 1..4
+    stirStrength: 0.2,  // how hard objects/cursor push the velocity field 0.05..0.5
+    objSpeed: 1,        // launch-speed multiplier for click/edge objects 0.5..2
+    objDrag: 0.03,      // per-frame object deceleration 0.01..0.1 (higher = shorter-lived)
   };
   function loadCfg() {
     try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(LS_KEY) || "{}")); }
@@ -49,10 +57,11 @@
   }
 
   // ---- solver constants ----
-  const ITER = 16, DT = 0.12, VORT = 8.0;
+  const ITER = 16, DT_BASE = 0.12;
+  let DT = DT_BASE;   // refreshed each step from cfg.simSpeed
   // object physics
-  const DECEL = 0.03, RESTITUTION = 0.98, STOP_SPEED = 0.05;
-  const MAX_OBJECTS = 12, OBJ_VEL_SCALE = 0.2, OBJ_AMT = 45;
+  const RESTITUTION = 0.98, STOP_SPEED = 0.05;
+  const MAX_OBJECTS = 12, OBJ_AMT = 45;
   const COOLDOWN = 180;
 
   let Wpx = 0, Hpx = 0, lastT = 0, active = false, idleFrames = 0;
@@ -127,8 +136,8 @@
         const len = Math.sqrt(nx * nx + ny * ny) + 1e-5;
         nx /= len; ny /= len;
         const w = curl[IX(i, j)];
-        u[IX(i, j)] += DT * VORT * (ny * w);
-        v[IX(i, j)] += DT * VORT * (-nx * w);
+        u[IX(i, j)] += DT * cfg.vorticity * (ny * w);
+        v[IX(i, j)] += DT * cfg.vorticity * (-nx * w);
       }
   }
   function velStep() {
@@ -157,17 +166,18 @@
         dens0[idx] += amt; u0[idx] += du; v0[idx] += dv;
       }
   }
-  function spawnObject(x, y, vx, vy) { if (objects.length < MAX_OBJECTS) objects.push({ x, y, vx, vy }); }
+  function spawnObject(x, y, vx, vy, src) { if (objects.length < MAX_OBJECTS) objects.push({ x, y, vx, vy, src }); }
+  const countSrc = (src) => { let n = 0; for (const o of objects) if (o.src === src) n++; return n; };
   function spawnFromEdge() {
     const edge = (Math.random() * 4) | 0;
-    const speed = 24 + Math.random() * 8, drift = (Math.random() * 2 - 1) * 12;
-    if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift);
-    else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift);
-    else if (edge === 2) spawnObject(Math.random() * Wpx, 0, drift, speed);
-    else spawnObject(Math.random() * Wpx, Hpx, drift, -speed);
+    const speed = (24 + Math.random() * 8) * cfg.objSpeed, drift = (Math.random() * 2 - 1) * 12 * cfg.objSpeed;
+    if (edge === 0) spawnObject(0, Math.random() * Hpx, speed, drift, "auto");
+    else if (edge === 1) spawnObject(Wpx, Math.random() * Hpx, -speed, drift, "auto");
+    else if (edge === 2) spawnObject(Math.random() * Wpx, 0, drift, speed, "auto");
+    else spawnObject(Math.random() * Wpx, Hpx, drift, -speed, "auto");
   }
   function updateObjects() {
-    const amt = OBJ_AMT * cfg.intensity;
+    const amt = OBJ_AMT * cfg.intensity, rad = cfg.plumeSize;
     for (let k = objects.length - 1; k >= 0; k--) {
       const o = objects[k];
       o.x += o.vx; o.y += o.vy;
@@ -175,26 +185,26 @@
       else if (o.x > Wpx) { o.x = Wpx; o.vx = -o.vx * RESTITUTION; }
       if (o.y < 0) { o.y = 0; o.vy = -o.vy * RESTITUTION; }
       else if (o.y > Hpx) { o.y = Hpx; o.vy = -o.vy * RESTITUTION; }
-      const sp = Math.hypot(o.vx, o.vy), ns = sp - DECEL;
+      const sp = Math.hypot(o.vx, o.vy), ns = sp - cfg.objDrag;
       if (ns <= STOP_SPEED) { objects.splice(k, 1); continue; }
       o.vx = o.vx / sp * ns; o.vy = o.vy / sp * ns;
       inject(cell(o.x / Wpx * N), cell(o.y / Hpx * N),
-             (o.vx / Wpx) * N * OBJ_VEL_SCALE, (o.vy / Hpx) * N * OBJ_VEL_SCALE, amt, 2);
+             (o.vx / Wpx) * N * cfg.stirStrength, (o.vy / Hpx) * N * cfg.stirStrength, amt, rad);
     }
   }
   function emitEdges(nEdges) {
-    const amt = 70 * cfg.intensity, f = 16, p = () => 1 + ((Math.random() * N) | 0), t = () => (Math.random() * 2 - 1) * 5;
-    if (nEdges >= 1) inject(2, p(), f, t(), amt, 2);
-    if (nEdges >= 2) inject(N - 1, p(), -f, t(), amt, 2);
-    if (nEdges >= 3) inject(p(), 2, t(), f, amt, 2);
-    if (nEdges >= 4) inject(p(), N - 1, t(), -f, amt, 2);
+    const amt = 70 * cfg.intensity, rad = cfg.plumeSize, f = 16, p = () => 1 + ((Math.random() * N) | 0), t = () => (Math.random() * 2 - 1) * 5;
+    if (nEdges >= 1) inject(2, p(), f, t(), amt, rad);
+    if (nEdges >= 2) inject(N - 1, p(), -f, t(), amt, rad);
+    if (nEdges >= 3) inject(p(), 2, t(), f, amt, rad);
+    if (nEdges >= 4) inject(p(), N - 1, t(), -f, amt, rad);
   }
   function emitCursor() {
     if (!mouse.has) return;
-    const du = ((mouse.x - mouse.px) / Wpx) * N * OBJ_VEL_SCALE;
-    const dv = ((mouse.y - mouse.py) / Hpx) * N * OBJ_VEL_SCALE;
+    const du = ((mouse.x - mouse.px) / Wpx) * N * cfg.stirStrength;
+    const dv = ((mouse.y - mouse.py) / Hpx) * N * cfg.stirStrength;
     mouse.px = mouse.x; mouse.py = mouse.y;
-    inject(cell(mouse.x / Wpx * N), cell(mouse.y / Hpx * N), du, dv, 55 * cfg.intensity, 2);
+    inject(cell(mouse.x / Wpx * N), cell(mouse.y / Hpx * N), du, dv, 55 * cfg.intensity, cfg.plumeSize);
   }
 
   // ---- palettes ----
@@ -249,8 +259,11 @@
   const hasWork = () => objects.length > 0 || idleFrames > 0 || continuous();
 
   function step() {
+    DT = DT_BASE * cfg.simSpeed;
     u0.fill(0); v0.fill(0); dens0.fill(0);
-    if (cfg.autoObjects > 0) while (objects.length < cfg.autoObjects) spawnFromEdge();
+    // maintain the autonomous population by its own count, so click objects
+    // no longer suppress auto spawning (they used to share one total)
+    if (cfg.autoObjects > 0) while (countSrc("auto") < cfg.autoObjects && objects.length < MAX_OBJECTS) spawnFromEdge();
     if (cfg.edgeEmit > 0) emitEdges(cfg.edgeEmit);
     if (cfg.cursorEmit) emitCursor();
     updateObjects();
@@ -286,11 +299,16 @@
   window.addEventListener("mousedown", (e) => {
     if (!cfg.enabled) return;
     if (e.target.closest && e.target.closest("#settings-panel, #topbar")) return;
-    const n = Math.max(1, cfg.clickCount | 0);
+    const n = Math.max(0, cfg.clickCount | 0);
+    if (n === 0) return;                       // 0 = clicks are inert
+    let spawned = 0;
     for (let i = 0; i < n; i++) {
-      const speed = 24 + Math.random() * 8, ang = Math.random() * Math.PI * 2;
-      spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed);
+      if (countSrc("click") >= cfg.clickMax) break;   // concurrent click-object cap
+      const speed = (24 + Math.random() * 8) * cfg.objSpeed, ang = Math.random() * Math.PI * 2;
+      spawnObject(e.clientX, e.clientY, Math.cos(ang) * speed, Math.sin(ang) * speed, "click");
+      spawned++;
     }
+    if (!spawned) return;                      // cap full — nothing to animate
     idleFrames = COOLDOWN; start();
   });
   window.addEventListener("resize", () => { resize(); if (!active) render(); });
