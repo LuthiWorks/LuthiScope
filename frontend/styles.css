@@ -88,6 +88,20 @@ html, body {
 }
 .settings input[type=range] { width: 100%; accent-color: var(--c-opt); }
 .settings input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--c-opt); cursor: pointer; }
+/* themed buttons/text fields — the browser defaults were white islands in a dark app */
+.settings button {
+  background: var(--glass); color: var(--ink-soft); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 4px 10px; font-family: inherit; font-size: 12px; cursor: pointer;
+}
+.settings button:hover { color: var(--c-opt); border-color: var(--c-opt); }
+.settings input[type=text] {
+  background: var(--glass); color: var(--ink); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 5px 8px; font-family: var(--mono); font-size: 11px;
+}
+.settings input[type=text]:focus { outline: none; border-color: var(--c-opt); }
+/* head chevrons stay borderless icons, not boxes */
+#settings-back { background: none; border: none; color: var(--ink-dim); font-size: 16px; cursor: pointer; padding: 0 6px 0 0; }
+#settings-back:hover { color: var(--c-opt); }
 
 /* metric selection sub-page (settings > Metric panels) */
 .set-note { padding: 10px 16px 0; color: var(--ink-faint); font-size: 11px; line-height: 1.5; }
@@ -179,15 +193,17 @@ html, body {
 #sidebar-logo { display: block; width: 96px; height: 96px; margin: 2px auto 14px; filter: drop-shadow(0 0 10px rgba(59,130,246,.25)); transition: width .22s ease, height .22s ease; }
 
 /* collapsible streams rail: slides to a slim strip; the logo stays in the corner */
-#sidebar { transition: width .22s ease, flex-basis .22s ease; }
+#sidebar { position: relative; transition: width .22s ease, flex-basis .22s ease; }
 #sidebar.collapsed { width: 64px; flex: 0 0 64px; overflow: hidden; padding: 12px 8px; }
-#sidebar.collapsed #sidebar-logo { width: 44px; height: 44px; margin: 2px auto 10px; }
+#sidebar.collapsed #sidebar-logo { width: 44px; height: 44px; margin: 34px auto 10px; }
 #sidebar.collapsed .sidebar-head, #sidebar.collapsed #stream-list,
 #sidebar.collapsed #hidden-wrap, #sidebar.collapsed #refresh { display: none; }
+/* small square in the panel's upper-right corner (drops below the logo when collapsed) */
 #sidebar-toggle {
-  display: block; width: 100%; padding: 4px; margin-bottom: 10px;
-  background: none; border: 1px solid var(--edge); border-radius: 8px;
-  color: var(--ink-faint); cursor: pointer; font-family: inherit;
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--glass); border: 1px solid var(--edge); border-radius: 6px;
+  color: var(--ink-faint); cursor: pointer; font-family: inherit; font-size: 12px; line-height: 1;
 }
 #sidebar-toggle:hover { color: var(--c-opt); border-color: var(--c-opt); }
 
