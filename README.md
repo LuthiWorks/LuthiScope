@@ -54,6 +54,13 @@ optimizer sweeps, SAE interpretability) on demand.
 
 ## Quickstart
 
+**Just want to run it?** Download `LuthiScope.exe` from the
+[latest release](https://github.com/LuthiWorks/LuthiScope/releases/latest) and
+double-click — no Python, no build. (Unsigned exe: if SmartScreen objects, "More
+info" → "Run anyway".)
+
+From source:
+
 ```bash
 pip install -e .          # pydantic, fastapi, uvicorn (websockets via uvicorn[standard])
 python -m luthiscope      # serves http://127.0.0.1:8800
