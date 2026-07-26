@@ -824,6 +824,15 @@ function loadForgot() { try { return JSON.parse(localStorage.getItem(FORGOT_KEY)
 function saveForgot() { try { localStorage.setItem(FORGOT_KEY, JSON.stringify(forgotten)); } catch (e) {} }
 let forgotten = loadForgot();
 let allStreams = [];
+// batch hide (Brian, 2026-07-25): per-stream checkboxes + the trash square under
+// the collapse toggle. Session-only selection — hiding persists, selection doesn't.
+let selectedIds = new Set();
+function updateClearSelected() {
+  const btn = $("clear-selected");
+  if (!btn) return;
+  btn.disabled = selectedIds.size === 0;
+  btn.title = selectedIds.size ? `Hide ${selectedIds.size} selected stream(s)` : "Hide selected streams";
+}
 
 async function loadStreams() {
   const list = $("stream-list");
@@ -858,8 +867,20 @@ function renderStreamList() {
   } else if (!visible.length) {
     list.innerHTML = "<li class='s-meta'>all streams hidden</li>";
   }
+  // drop selections for streams that are no longer in the visible list
+  const visibleIds = new Set(visible.map((s) => s.id));
+  for (const id of [...selectedIds]) if (!visibleIds.has(id)) selectedIds.delete(id);
   for (const s of visible) {
     const li = document.createElement("li");
+    const check = document.createElement("input");
+    check.type = "checkbox"; check.className = "s-check";
+    check.title = "Select for batch hide";
+    check.checked = selectedIds.has(s.id);
+    check.onclick = (e) => e.stopPropagation();   // don't also select the stream
+    check.onchange = () => {
+      if (check.checked) selectedIds.add(s.id); else selectedIds.delete(s.id);
+      updateClearSelected();
+    };
     const main = document.createElement("div");
     main.className = "s-main";
     const liveDot = s.live ? `<span class="live-dot" title="actively logging">●</span>` : "";
@@ -870,11 +891,12 @@ function renderStreamList() {
     const trash = document.createElement("button");
     trash.className = "s-trash"; trash.title = "Hide this stream"; trash.textContent = "🗑";
     trash.onclick = (e) => { e.stopPropagation(); hiddenIds.add(s.id); saveHidden(); renderStreamList(); };
-    li.appendChild(main); li.appendChild(trash);
+    li.appendChild(check); li.appendChild(main); li.appendChild(trash);
     list.appendChild(li);
   }
   const clearBtn = $("clear-all");
   if (clearBtn) clearBtn.style.display = visible.length ? "" : "none";
+  updateClearSelected();
   renderHidden(hiddenStreams);
 }
 
@@ -1173,6 +1195,13 @@ if (sideBtn && sideEl) {
 }
 
 $("refresh").onclick = loadStreams;
+const clearSelBtn = $("clear-selected");
+if (clearSelBtn) clearSelBtn.onclick = () => {
+  if (!selectedIds.size) return;
+  for (const id of selectedIds) hiddenIds.add(id);
+  selectedIds.clear();
+  saveHidden(); renderStreamList();
+};
 const clearAllBtn = $("clear-all");
 if (clearAllBtn) clearAllBtn.onclick = () => {
   for (const s of allStreams) if (!hiddenIds.has(s.id)) hiddenIds.add(s.id);
