@@ -310,6 +310,16 @@ html, body {
 #panel-backdrop { position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.18); opacity: 0; pointer-events: none; transition: opacity .15s; }
 #panel-backdrop.show { opacity: 1; pointer-events: auto; }
 
+/* panel-explanation tooltip: glass like the app, a touch more transparent than
+   the enlarged panel (0.82); follows hover on panel titles and metric-list rows */
+#panel-tip {
+  position: fixed; z-index: 400; max-width: 340px; pointer-events: none;
+  background: rgba(17, 23, 38, 0.70); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--edge-strong); border-radius: 8px; padding: 9px 12px;
+  color: var(--ink-soft); font-size: 12px; line-height: 1.55; font-weight: 400;
+  letter-spacing: 0; text-transform: none; box-shadow: 0 8px 28px rgba(0, 0, 0, .4);
+}
+
 /* cursor tooltip */
 .u-tip {
   position: absolute; z-index: 20; pointer-events: none;

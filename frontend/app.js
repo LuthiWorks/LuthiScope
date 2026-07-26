@@ -306,6 +306,31 @@ const PANEL_DESCS = {
   "Dynamics|BEST-ACTION VALUE · r_best": "The score of the best action the planner found this cycle. Persistently low means nothing looks appealing — including rest.",
 };
 
+// One shared floating tooltip for panel explanations. Native title= attributes
+// were unreliable in the pywebview window (and unstylable anyway), so this is a
+// themed div positioned under the hovered element, clamped to the viewport.
+let panelTip = null;
+function attachDesc(el, text) {
+  el.addEventListener("mouseenter", () => {
+    if (!panelTip) {
+      panelTip = document.createElement("div");
+      panelTip.id = "panel-tip";
+      panelTip.style.display = "none";
+      document.body.appendChild(panelTip);
+    }
+    panelTip.textContent = text;
+    panelTip.style.display = "block";
+    const r = el.getBoundingClientRect();
+    const tw = panelTip.offsetWidth, th = panelTip.offsetHeight;
+    let x = r.left, y = r.bottom + 8;
+    if (x + tw > window.innerWidth - 8) x = window.innerWidth - tw - 8;
+    if (y + th > window.innerHeight - 8) y = r.top - th - 8;
+    panelTip.style.left = Math.max(8, x) + "px";
+    panelTip.style.top = Math.max(8, y) + "px";
+  });
+  el.addEventListener("mouseleave", () => { if (panelTip) panelTip.style.display = "none"; });
+}
+
 function f2(v){ return v==null?"--":Number(v).toFixed(2); }
 function f3(v){ return v==null?"--":Number(v).toFixed(3); }
 function f4(v){ return v==null?"--":Number(v).toFixed(4); }
@@ -695,7 +720,7 @@ function buildPanels(kind) {
       const panel = document.createElement("div"); panel.className = "panel";
       const title = document.createElement("div"); title.className = "panel-title";
       const desc = PANEL_DESCS[`${grp.title}|${spec.title}`];
-      if (desc) title.title = desc;
+      if (desc) attachDesc(title, desc);
       const titleText = document.createElement("span"); titleText.textContent = spec.title;
       const expandBtn = document.createElement("button");
       expandBtn.className = "panel-expand"; expandBtn.title = "Enlarge"; expandBtn.textContent = "⤢";
@@ -1164,6 +1189,14 @@ function buildMetricSettings() {
   }
   panel.innerHTML = html;
   panel.querySelectorAll(".cat-master[data-mixed]").forEach((el) => { el.indeterminate = true; });
+  // same explanations as the dashboard panels, on the metric rows here
+  panel.querySelectorAll(".set-metric").forEach((row) => {
+    const box = row.querySelector("[data-mid]");
+    if (!box) return;
+    const [, group, panelTitle] = box.dataset.mid.split("|");
+    const desc = PANEL_DESCS[`${group}|${panelTitle}`];
+    if (desc) attachDesc(row, desc);
+  });
   const rebuild = () => { if (current) { buildPanels(current.kind); refreshData(); } };
   $("show-empty-panels").addEventListener("change", (e) => {
     showEmptyPanels = e.target.checked;
