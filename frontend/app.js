@@ -573,24 +573,38 @@ function makeHeatmap(mountEl, spec, xlabel) {
     const o = document.createElement("option"); o.value = m; o.textContent = m;
     if (i === 0) o.selected = true; sel.appendChild(o);
   });
+  // per-block normalization: each row scaled to its own min→max, so a block
+  // whose absolute range is dwarfed by a neighbor's still shows its shape
+  // (the seed42 precision fan-out made block 0 look flat next to block 2)
+  const NORM_KEY = "luthiscope.hmRowNorm";
+  let rowNorm = false;
+  try { rowNorm = localStorage.getItem(NORM_KEY) === "1"; } catch (e) {}
+  const normWrap = document.createElement("label"); normWrap.className = "hm-norm";
+  const normBox = document.createElement("input"); normBox.type = "checkbox"; normBox.className = "s-check";
+  normBox.checked = rowNorm;
+  normWrap.appendChild(normBox); normWrap.appendChild(document.createTextNode("normalize per block"));
   const canvas = document.createElement("canvas"); canvas.className = "hm-canvas";
   const foot = document.createElement("div"); foot.className = "hm-foot";
   const legend = document.createElement("span"); legend.className = "hm-legend";
   foot.appendChild(legend);
   const tip = document.createElement("div"); tip.className = "u-tip"; tip.style.display = "none";
-  mountEl.appendChild(sel); mountEl.appendChild(canvas); mountEl.appendChild(foot); mountEl.appendChild(tip);
+  mountEl.appendChild(sel); mountEl.appendChild(normWrap); mountEl.appendChild(canvas); mountEl.appendChild(foot); mountEl.appendChild(tip);
   mountEl.style.position = "relative";
   const ctx = canvas.getContext("2d");
   const LABEL_W = 26;   // left gutter for block-index labels
   let recs = [], metric = spec.metrics[0], frames = [], nBlocks = 0, vmin = 0, vmax = 1;
+  let rowLo = [], rowHi = [];
 
   function compute() {
     frames = recs.filter(spec.has);
     nBlocks = frames.reduce((m, f) => Math.max(m, f.substrate_blocks.length), 0);
     let lo = Infinity, hi = -Infinity;
-    for (const f of frames) for (const b of f.substrate_blocks) {
+    rowLo = new Array(nBlocks).fill(Infinity); rowHi = new Array(nBlocks).fill(-Infinity);
+    for (const f of frames) for (let bi = 0; bi < f.substrate_blocks.length; bi++) {
+      const b = f.substrate_blocks[bi];
       const v = num(b && b[metric]); if (v == null) continue;
       if (v < lo) lo = v; if (v > hi) hi = v;
+      if (v < rowLo[bi]) rowLo[bi] = v; if (v > rowHi[bi]) rowHi[bi] = v;
     }
     vmin = lo === Infinity ? 0 : lo; vmax = hi === -Infinity ? 1 : hi;
   }
@@ -609,7 +623,10 @@ function makeHeatmap(mountEl, spec, xlabel) {
       const blocks = frames[fi].substrate_blocks;
       for (let bi = 0; bi < nBlocks; bi++) {
         const v = num(blocks[bi] && blocks[bi][metric]); if (v == null) continue;
-        const c = heatColor((v - vmin) / span);
+        const t = rowNorm
+          ? (v - rowLo[bi]) / ((rowHi[bi] - rowLo[bi]) || 1)
+          : (v - vmin) / span;
+        const c = heatColor(t);
         ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
         ctx.fillRect(LABEL_W + fi * cw, bi * rowH, Math.ceil(cw), rowH);
       }
@@ -620,7 +637,9 @@ function makeHeatmap(mountEl, spec, xlabel) {
     for (let bi = 0; bi < nBlocks; bi += lblStep) {
       ctx.fillText(String(bi), 3, bi * rowH + rowH / 2 + 0.5);
     }
-    legend.textContent = `${metric}: ${g(vmin)} … ${g(vmax)} · ${nBlocks} blocks × ${frames.length} firings`;
+    legend.textContent = rowNorm
+      ? `${metric}: each block scaled to its own min…max · ${nBlocks} blocks × ${frames.length} firings`
+      : `${metric}: ${g(vmin)} … ${g(vmax)} · ${nBlocks} blocks × ${frames.length} firings`;
   }
   canvas.addEventListener("mousemove", (e) => {
     if (!frames.length || !nBlocks) { tip.style.display = "none"; return; }
@@ -646,6 +665,11 @@ function makeHeatmap(mountEl, spec, xlabel) {
   });
   canvas.addEventListener("mouseleave", () => { tip.style.display = "none"; });
   sel.addEventListener("change", () => { metric = sel.value; compute(); draw(); });
+  normBox.addEventListener("change", () => {
+    rowNorm = normBox.checked;
+    try { localStorage.setItem(NORM_KEY, rowNorm ? "1" : "0"); } catch (e) {}
+    draw();
+  });
 
   return {
     hm: true,
