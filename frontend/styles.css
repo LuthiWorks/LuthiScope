@@ -87,7 +87,23 @@ html, body {
   border-radius: 6px; padding: 3px 6px; font-family: inherit;
 }
 .settings input[type=range] { width: 100%; accent-color: var(--c-opt); }
-.settings input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--c-opt); cursor: pointer; }
+.settings input[type=checkbox] { width: 16px; height: 16px; }
+/* themed checkboxes — native boxes are white islands; these wear the glass */
+.s-check, .settings input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; margin: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--glass); border: 1px solid var(--edge-strong); border-radius: 4px;
+  cursor: pointer;
+}
+.s-check:hover, .settings input[type=checkbox]:hover { border-color: var(--c-opt); }
+.s-check:checked, .settings input[type=checkbox]:checked {
+  background: rgba(59, 130, 246, 0.25); border-color: var(--c-opt);
+}
+.s-check:checked::after { content: "✓"; color: var(--c-opt); font-size: 9px; font-weight: 700; line-height: 1; }
+.settings input[type=checkbox]:checked::after { content: "✓"; color: var(--c-opt); font-size: 11px; font-weight: 700; line-height: 1; }
+/* category masters in a mixed state show a dash, not a check */
+.settings input[type=checkbox]:indeterminate { border-color: var(--c-opt); }
+.settings input[type=checkbox]:indeterminate::after { content: ""; width: 8px; height: 2px; background: var(--c-opt); }
 /* themed buttons/text fields — the browser defaults were white islands in a dark app */
 .settings button {
   background: var(--glass); color: var(--ink-soft); border: 1px solid var(--edge);
