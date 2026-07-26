@@ -583,6 +583,13 @@ function makeHeatmap(mountEl, spec, xlabel) {
 // Everything in GROUPS is enabled by default; only the DISABLED ids persist, so
 // catalog additions appear without anyone touching settings. Heatmap panels
 // toggle whole ("*"); series panels toggle per metric label.
+// "Show panels without data": normally a panel renders only when the stream
+// actually carries its metric (auto-hide), so most of the universal catalog is
+// invisible on any given run. This toggle renders every ENABLED panel as a
+// labeled no-data shell instead — the way to see the whole catalog laid out.
+const SHOW_EMPTY_KEY = "luthiscope.showEmptyPanels";
+let showEmptyPanels = false;
+try { showEmptyPanels = localStorage.getItem(SHOW_EMPTY_KEY) === "1"; } catch (e) {}
 const METRICS_KEY = "luthiscope.disabledMetrics";
 function loadDisabledMetrics() { try { return new Set(JSON.parse(localStorage.getItem(METRICS_KEY) || "[]")); } catch (e) { return new Set(); } }
 function saveDisabledMetrics() { try { localStorage.setItem(METRICS_KEY, JSON.stringify([...disabledMetrics])); } catch (e) {} }
@@ -616,7 +623,7 @@ function buildPanels(kind) {
   for (const grp of cfg.groups) {
     const panels = grp.panels
       .map((p) => filterPanelByPrefs(kind, grp.title, p))
-      .filter((p) => p && panelHasData(p));
+      .filter((p) => p && (showEmptyPanels || panelHasData(p)));
     if (!panels.length) continue;            // hide empty/deselected groups
     visibleTitles.push(grp.title);
     groupSeries[grp.title] = panels.flatMap((p) => p.series || []);
@@ -1074,7 +1081,8 @@ function buildMetricSettings() {
   if (!panel) return;
   const KIND_LABEL = { training: "Training", cognition: "Cognition" };
   let html = `<div class="settings-head"><button id="settings-back" title="back">‹</button>METRIC PANELS<button id="settings-close">✕</button></div>`;
-  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels without data auto-hide either way.</div>`;
+  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels whose data is absent from the current stream auto-hide — turn on the switch below to render them anyway as empty shells.</div>`;
+  html += `<label class="set-row"><span>Show panels without data</span><input type="checkbox" id="show-empty-panels" ${showEmptyPanels ? "checked" : ""}></label>`;
   for (const kind in GROUPS) {
     html += `<div class="settings-cat">${KIND_LABEL[kind] || kind} metrics</div>`;
     for (const grp of GROUPS[kind].groups) {
@@ -1104,6 +1112,11 @@ function buildMetricSettings() {
   panel.innerHTML = html;
   panel.querySelectorAll(".cat-master[data-mixed]").forEach((el) => { el.indeterminate = true; });
   const rebuild = () => { if (current) { buildPanels(current.kind); refreshData(); } };
+  $("show-empty-panels").addEventListener("change", (e) => {
+    showEmptyPanels = e.target.checked;
+    try { localStorage.setItem(SHOW_EMPTY_KEY, showEmptyPanels ? "1" : "0"); } catch (err) {}
+    rebuild();
+  });
   panel.querySelectorAll("[data-mid]").forEach((el) => {
     el.addEventListener("change", () => {
       const id = el.dataset.mid;

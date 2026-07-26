@@ -344,7 +344,11 @@ html, body {
 .hm-select {
   background: var(--glass); color: var(--ink); border: 1px solid var(--edge);
   border-radius: 6px; padding: 2px 6px; font-family: var(--mono); font-size: 11px; margin-bottom: 6px;
+  cursor: pointer;
 }
+.hm-select:hover { border-color: var(--c-opt); }
+/* the popup list is native chrome — options need their own dark styling */
+.hm-select option, .settings select option { background: #0d1220; color: var(--ink); }
 .hm-canvas { display: block; width: 100%; border: 1px solid var(--edge); border-radius: 4px; image-rendering: pixelated; }
 .hm-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
 .hm-readout { color: var(--ink); }
