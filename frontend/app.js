@@ -1182,8 +1182,15 @@ function buildMetricSettings() {
   const panel = $("settings-panel");
   if (!panel) return;
   const KIND_LABEL = { training: "Training", cognition: "Cognition" };
+  // live-dot per metric: green pulse = this metric has data in the loaded
+  // stream right now (Brian, 2026-07-25). Shown regardless of checkbox state,
+  // so a disabled-but-active metric is findable without trial and error.
+  const kindActive = (kind) => current && current.kind === kind && records.length > 0;
+  const dot = `<span class="live-dot" title="data present in the loaded stream">●</span>`;
+  const seriesLive = (kind, s) => kindActive(kind) && records.some((r) => s.get(r) != null);
+  const heatmapLive = (kind, p) => kindActive(kind) && records.some(p.has);
   let html = `<div class="settings-head"><button id="settings-back" title="back">‹</button>METRIC PANELS<button id="settings-close">✕</button></div>`;
-  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels whose data is absent from the current stream auto-hide — turn on the switch below to render them anyway as empty shells.</div>`;
+  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels whose data is absent from the current stream auto-hide — turn on the switch below to render them anyway as empty shells. A pulsing green dot marks metrics with data in the loaded stream.</div>`;
   html += `<label class="set-row"><span>Show panels without data</span><input type="checkbox" id="show-empty-panels" ${showEmptyPanels ? "checked" : ""}></label>`;
   for (const kind in GROUPS) {
     html += `<div class="settings-cat">${KIND_LABEL[kind] || kind} metrics</div>`;
@@ -1200,12 +1207,12 @@ function buildMetricSettings() {
         if (p.type === "heatmap") {
           const id = metricId(kind, grp.title, p.title, "*");
           html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
-            ` ${metricEnabled(id) ? "checked" : ""}><span>${p.title}</span><em>heatmap</em></label>`;
+            ` ${metricEnabled(id) ? "checked" : ""}><span>${heatmapLive(kind, p) ? dot : ""}${p.title}</span><em>heatmap</em></label>`;
         } else {
           for (const s of p.series) {
             const id = metricId(kind, grp.title, p.title, s.label);
             html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
-              ` ${metricEnabled(id) ? "checked" : ""}><span>${s.label}</span><em>${p.title}</em></label>`;
+              ` ${metricEnabled(id) ? "checked" : ""}><span>${seriesLive(kind, s) ? dot : ""}${s.label}</span><em>${p.title}</em></label>`;
           }
         }
       }
