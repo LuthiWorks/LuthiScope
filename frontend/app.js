@@ -497,21 +497,24 @@ function dragPanPlugin() {
           over.style.cursor = "grabbing";
           const xData = u.data[0];
           const dataMin = xData[0], dataMax = xData[xData.length - 1];
-          const startX = e.clientX;
+          const startX = e.clientX, startY = e.clientY;
           const startMin = u.scales.x.min, range = u.scales.x.max - u.scales.x.min;
           const pxToVal = range / over.clientWidth;
-          // Freeze the y-window at grab time: without this, uPlot re-fits y
-          // to the visible data on every x change, so the viewport "breathes"
-          // with local variance while panning (Brian's report, 2026-07-26).
-          // The window is a free-floating frame you slide, not a tracker.
-          const yMin = u.scales.y.min, yMax = u.scales.y.max;
+          // Free-floating pan (Brian, 2026-07-26): the ZOOM is frozen — the
+          // window's x-span and y-span stay fixed — but the window itself
+          // moves wherever the drag takes it, both axes. Without the explicit
+          // y set, uPlot re-fits y to visible data on every x change and the
+          // viewport rescales itself to local variance mid-drag.
+          const yMax0 = u.scales.y.max, ySpan = u.scales.y.max - u.scales.y.min;
+          const pxToValY = ySpan / over.clientHeight;
           const move = (ev) => {
             let nMin = startMin - (ev.clientX - startX) * pxToVal;
             if (nMin < dataMin) nMin = dataMin;
             if (nMin + range > dataMax) nMin = dataMax - range;
+            const nYMax = yMax0 + (ev.clientY - startY) * pxToValY;
             u.batch(() => {
               u.setScale("x", { min: nMin, max: nMin + range });
-              u.setScale("y", { min: yMin, max: yMax });
+              u.setScale("y", { min: nYMax - ySpan, max: nYMax });
             });
           };
           const up = () => {
