@@ -395,6 +395,8 @@ try {
 } catch (e) {}
 let showEventMarks = false;
 let eventLocked = false;
+let evlockIndex = null;   // null = average across all events; else index into the event list
+let derivedEvents = [];   // events LuthiScope computes from the records themselves
 try {
   showEventMarks = localStorage.getItem(EVMARKS_KEY) === "1";
   eventLocked = localStorage.getItem(EVLOCK_KEY) === "1";
@@ -587,16 +589,57 @@ function dragPanPlugin() {
 //   - a panel declares `marks: false` (schedules, odometers, host telemetry —
 //     nothing the model does can react to a serving) or `marks: "epoch"`
 //     (epoch-boundary data only). Default: all marks.
+// Events LuthiScope derives from the records alone — no external file, no
+// declared rule, no model: things the data itself states plainly (Brian's
+// question, 2026-07-26). Input-property events (e.g. "a Greek page arrived")
+// are NOT derivable here — no metric carries what text was served — so those
+// come from events.jsonl, written by the producer or by a deterministic
+// canary-replay script. Declaration or arithmetic, never interpretation.
+function deriveEvents(recs) {
+  const out = [];
+  const grads = recs.map((r) => num(r.grad_norm)).filter((v) => v != null).sort((a, b) => a - b);
+  const gmed = grads.length ? grads[grads.length >> 1] : null;
+  let prevFires = null, prevEpoch = null;
+  for (const r of recs) {
+    const step = num(r.step);
+    if (step == null) continue;
+    const fires = num(r.substrate?.consolidation_fires);
+    if (fires != null && prevFires != null && fires > prevFires) {
+      out.push({ step, kind: "derived", label: `consolidation fire (+${g(fires - prevFires)}, total ${g(fires)})` });
+    }
+    if (fires != null) prevFires = fires;
+    const ep = num(r.epoch);
+    if (ep != null && prevEpoch != null && ep !== prevEpoch) {
+      out.push({ step, kind: "epoch", label: `epoch ${gint(ep)} begins` });
+    }
+    if (ep != null) prevEpoch = ep;
+    if (r.nonfinite === true) out.push({ step, kind: "derived", label: "non-finite loss/gradient flagged" });
+    const gn = num(r.grad_norm);
+    if (gn != null && gmed && gn > 5 * gmed) {
+      out.push({ step, kind: "derived", label: `gradient shock (${g(gn)}, ${g(gn / gmed)}× median)` });
+    }
+  }
+  return out;
+}
+
+// the event list in play for the current stream: declared (events.jsonl)
+// plus derived, sorted; empty when marks are off
+function activeEvents() {
+  if (!showEventMarks || !current || current.kind !== "training") return [];
+  return streamEvents.concat(derivedEvents).sort((a, b) => a.step - b.step);
+}
+
 function panelMarks(spec) {
-  if (!showEventMarks) return [];          // off unless explicitly enabled
-  if (!current || current.kind !== "training") return [];
+  const all = activeEvents();
+  if (!all.length) return [];
   if (spec.marks === false) return [];
-  if (spec.marks === "epoch") return streamEvents.filter((e) => e.kind === "epoch");
-  return streamEvents;
+  if (spec.marks === "epoch") return all.filter((e) => e.kind === "epoch");
+  return all;
 }
 
 function eventMarkersPlugin(spec) {
-  const COLORS = { canary: "rgba(251,146,60,0.55)", epoch: "rgba(148,163,184,0.45)" };
+  const COLORS = { canary: "rgba(251,146,60,0.55)", epoch: "rgba(148,163,184,0.45)",
+                   derived: "rgba(34,211,238,0.45)" };
   let tip = null;
   return {
     hooks: {
@@ -1008,12 +1051,16 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
-  const canary = (showEventMarks && current.kind === "training")
-    ? streamEvents.filter((e) => e.kind === "canary").map((e) => e.step) : [];
+  const evList = activeEvents();
+  const canary = evList.map((e) => e.step);
   const locked = eventLocked && canary.length > 0;
-  // event-locked x grid: steps relative to each serving
+  // one event, or all of them averaged
+  const lockSteps = (locked && evlockIndex != null && canary[evlockIndex] != null)
+    ? [canary[evlockIndex]] : canary;
+  // event-locked x grid: steps relative to the event(s)
   const relXs = [];
   if (locked) for (let d = -EVLOCK_PRE; d <= EVLOCK_POST; d += EVLOCK_GRID) relXs.push(d);
+  renderEvlockBar(evList, locked);
   // compare-stream points, aligned later per series by nearest step
   const cmpPts = (compare && compare.kind === current.kind)
     ? compare.records.filter((r) => cfg.x(r) != null) : null;
@@ -1028,7 +1075,7 @@ function refreshData() {
         const pairs = pts.map((r) => [cfg.x(r), s.get(r)]).filter((p) => p[1] != null);
         return relXs.map((d) => {
           let sum = 0, n = 0;
-          for (const ev of canary) {
+          for (const ev of lockSteps) {
             const v = nearestVal(pairs, ev + d, EVLOCK_TOL);
             if (v != null) { sum += v; n++; }
           }
@@ -1048,6 +1095,39 @@ function refreshData() {
     renderReadout(c.readoutEl, c.spec, seriesData);
   }
   updateOverview();
+}
+
+// Event navigation for the locked view (Brian, 2026-07-26): step through
+// events one at a time, or average all of them.
+function renderEvlockBar(evList, locked) {
+  let bar = $("evlock-bar");
+  if (!locked) { if (bar) bar.style.display = "none"; return; }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "evlock-bar"; bar.className = "evlock-bar";
+    const main = $("main");
+    main.insertBefore(bar, $("panels"));
+  }
+  bar.style.display = "";
+  const n = evList.length;
+  const cur = evlockIndex == null ? null : evList[evlockIndex];
+  const label = cur
+    ? `event ${evlockIndex + 1}/${n} · step ${gint(cur.step)} · ${cur.label}`
+    : `averaging all ${n} events`;
+  bar.innerHTML =
+    `<button class="ev-nav" data-ev="prev" title="Previous event">‹</button>` +
+    `<button class="ev-nav" data-ev="avg" title="Average all events"${evlockIndex == null ? ' class="on"' : ""}>avg</button>` +
+    `<button class="ev-nav" data-ev="next" title="Next event">›</button>` +
+    `<span class="ev-label">${label}</span>`;
+  bar.querySelectorAll(".ev-nav").forEach((b) => {
+    b.onclick = () => {
+      const mode = b.dataset.ev;
+      if (mode === "avg") evlockIndex = null;
+      else if (mode === "prev") evlockIndex = evlockIndex == null ? n - 1 : Math.max(0, evlockIndex - 1);
+      else evlockIndex = evlockIndex == null ? 0 : Math.min(n - 1, evlockIndex + 1);
+      refreshData();
+    };
+  });
 }
 
 function renderReadout(el, spec, seriesData) {
@@ -1260,6 +1340,8 @@ async function selectStream(id, kind, li) {
     const ev = await (await fetch(`/api/streams/${id}/events`)).json();
     streamEvents = ev.events || [];
   } catch (e) { streamEvents = []; }
+  derivedEvents = deriveEvents(records);
+  evlockIndex = null;
   if (ledgerMode) { loadLedger(); }
   buildPanels(kind);
   refreshData();
@@ -1358,7 +1440,7 @@ async function buildSettings() {
           `<div id="runs-dir-status" style="font-size:11px;opacity:.75;margin-top:4px"></div></div>`;
   html += `<div class="settings-cat">Display</div>`;
   html += `<div class="set-row"><span>Metric panels</span><button id="open-metric-settings">Open ›</button></div>`;
-  html += `<label class="set-row"><span>Event marks <em style="opacity:.6;font-style:normal;font-size:10px">vertical lines from events.jsonl; hover to name</em></span>` +
+  html += `<label class="set-row"><span>Event marks <em style="opacity:.6;font-style:normal;font-size:10px">derived from the log + any events.jsonl; hover to name</em></span>` +
           `<input type="checkbox" id="evmarks-toggle" ${showEventMarks ? "checked" : ""}></label>`;
   html += `<label class="set-row"><span>Event-locked view <em style="opacity:.6;font-style:normal;font-size:10px">avg around marks — needs Event marks</em></span>` +
           `<input type="checkbox" id="evlock-toggle" ${eventLocked ? "checked" : ""} ${showEventMarks ? "" : "disabled"}></label>`;

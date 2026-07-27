@@ -240,6 +240,14 @@ html, body {
 #clear-selected:not(:disabled):hover { color: var(--c-bad); border-color: var(--c-bad); }
 #sidebar.collapsed #clear-selected { display: none; }
 .s-check { width: 13px; height: 13px; flex: none; accent-color: var(--c-opt); cursor: pointer; }
+/* event-locked navigation bar */
+.evlock-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ev-nav {
+  background: var(--glass); color: var(--ink-soft); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 2px 9px; cursor: pointer; font-family: inherit; font-size: 12px;
+}
+.ev-nav:hover { color: var(--c-opt); border-color: var(--c-opt); }
+.ev-label { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 /* compare button on stream rows */
 .s-cmpbtn {
   flex: none; padding: 2px 6px; font-size: 10px; letter-spacing: 1px; cursor: pointer;
