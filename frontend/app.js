@@ -376,6 +376,40 @@ let current = null;
 let ws = null;
 let groupSeries = {};   // group title -> flat list of its visible series
 let maximized = null;   // { panel, rec } of the currently enlarged panel
+let streamEvents = [];  // events.jsonl marks for the current stream [{step,label,kind}]
+let compare = null;     // {id, run_dir, kind, records} — the ONE comparison stream
+let ledgerMode = false; // trust-ledger window replaces the monitor view
+let ledgerCharts = [];  // panel recs for the ledger view (managed separately)
+
+// Event-locked averaging (config > Display): line panels show the mean
+// trace across a window around every canary event instead of the raw
+// timeline. Persisted; needs events to do anything.
+const EVLOCK_KEY = "luthiscope.eventLocked";
+let eventLocked = false;
+try { eventLocked = localStorage.getItem(EVLOCK_KEY) === "1"; } catch (e) {}
+const EVLOCK_PRE = 2000, EVLOCK_POST = 5000, EVLOCK_GRID = 100, EVLOCK_TOL = 60;
+
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// nearest-record lookup on a sorted [x, value] array (for compare alignment
+// and event-locked sampling); null when nothing within tol
+function nearestVal(pairs, x, tol) {
+  let lo = 0, hi = pairs.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (pairs[mid][0] < x) lo = mid + 1; else hi = mid;
+  }
+  let best = null, bestD = tol + 1;
+  for (const i of [lo - 1, lo]) {
+    if (i < 0 || i >= pairs.length) continue;
+    const d = Math.abs(pairs[i][0] - x);
+    if (d < bestD) { bestD = d; best = pairs[i][1]; }
+  }
+  return bestD <= tol ? best : null;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -531,9 +565,72 @@ function dragPanPlugin() {
   };
 }
 
+// vertical event marks (canary/epoch) from the stream's events.jsonl. In
+// event-locked mode a single mark sits at Δ0. Hovering a mark while the
+// panel is ENLARGED shows its name (Brian's spec: name only, enlarged only).
+function eventMarkersPlugin() {
+  const COLORS = { canary: "rgba(251,146,60,0.55)", epoch: "rgba(148,163,184,0.45)" };
+  let tip = null;
+  return {
+    hooks: {
+      init: (u) => {
+        tip = document.createElement("div");
+        tip.className = "u-tip"; tip.style.display = "none";
+        u.over.appendChild(tip);
+        u.over.addEventListener("mousemove", (e) => {
+          const panel = u.root.closest(".panel");
+          if (!panel || !panel.classList.contains("maximized")) { tip.style.display = "none"; return; }
+          const marks = eventLocked ? [{ step: 0, label: "serving (Δ0)" }] : streamEvents;
+          if (!marks.length) { tip.style.display = "none"; return; }
+          const rect = u.over.getBoundingClientRect();
+          const px = e.clientX - rect.left;
+          let best = null, bestD = 6;
+          for (const ev of marks) {
+            if (ev.step < u.scales.x.min || ev.step > u.scales.x.max) continue;
+            const d = Math.abs(u.valToPos(ev.step, "x") - px);
+            if (d < bestD) { bestD = d; best = ev; }
+          }
+          if (!best) { tip.style.display = "none"; return; }
+          tip.textContent = best.label;
+          tip.style.display = "block";
+          tip.style.left = Math.max(0, px - tip.offsetWidth / 2) + "px";
+          tip.style.top = "4px";
+        });
+        u.over.addEventListener("mouseleave", () => { if (tip) tip.style.display = "none"; });
+      },
+      draw: (u) => {
+        const marks = eventLocked ? [{ step: 0, kind: "canary" }] : streamEvents;
+        if (!marks.length) return;
+        const ctx = u.ctx;
+        ctx.save();
+        for (const ev of marks) {
+          if (ev.step < u.scales.x.min || ev.step > u.scales.x.max) continue;
+          const x = u.valToPos(ev.step, "x", true);
+          ctx.strokeStyle = COLORS[ev.kind] || COLORS.epoch;
+          ctx.lineWidth = 1;
+          if (ev.kind === "epoch") ctx.setLineDash([4, 4]); else ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(x, u.bbox.top);
+          ctx.lineTo(x, u.bbox.top + u.bbox.height);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+    },
+  };
+}
+
 function makeChart(mountEl, spec, xlabel, widthPx) {
   const series = [{}].concat(
-    spec.series.map((s) => ({
+    spec.series.map((s) => (s.cmp ? {
+      // comparison-stream shadow: same hue, dashed and faded
+      label: s.label,
+      stroke: hexToRgba(s.color, 0.45),
+      width: 1,
+      dash: [5, 5],
+      spanGaps: true,
+      points: { show: false },
+    } : {
       label: s.label,
       stroke: s.color,
       width: 1.8,
@@ -562,7 +659,7 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
         },
       },
     },
-    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin()],
+    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin(), eventMarkersPlugin()],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
@@ -732,12 +829,21 @@ function buildPanels(kind) {
   const width = panelWidth();
   const visibleTitles = [];
   for (const grp of cfg.groups) {
-    const panels = grp.panels
+    let panels = grp.panels
       .map((p) => filterPanelByPrefs(kind, grp.title, p))
       .filter((p) => p && (showEmptyPanels || panelHasData(p)));
+    // comparison overlay (one extra stream, line panels only — heatmaps
+    // excluded per Brian): each series gains a dashed shadow twin
+    if (compare && compare.kind === kind) {
+      panels = panels.map((p) => p.type === "heatmap" ? p : Object.assign({}, p, {
+        series: p.series.concat(p.series.map((s) => ({
+          label: s.label, color: s.color, good: null, get: s.get, cmp: true,
+        }))),
+      }));
+    }
     if (!panels.length) continue;            // hide empty/deselected groups
     visibleTitles.push(grp.title);
-    groupSeries[grp.title] = panels.flatMap((p) => p.series || []);
+    groupSeries[grp.title] = panels.flatMap((p) => (p.series || []).filter((s) => !s.cmp));
 
     const section = document.createElement("section");
     section.className = "group";
@@ -764,12 +870,14 @@ function buildPanels(kind) {
       const chartHost = document.createElement("div"); panel.appendChild(chartHost);
       body.appendChild(panel);
       let rec;
+      const xl = (eventLocked && streamEvents.some((e) => e.kind === "canary"))
+        ? "Δ steps from serving" : cfg.xlabel;
       if (spec.type === "heatmap") {
         const hm = makeHeatmap(chartHost, spec, cfg.xlabel);
         rec = { hm, spec, group: grp.title, el: chartHost };
       } else {
         const readoutEl = document.createElement("div"); readoutEl.className = "panel-readout"; panel.appendChild(readoutEl);
-        const u = makeChart(chartHost, spec, cfg.xlabel, width);
+        const u = makeChart(chartHost, spec, xl, width);
         rec = { u, spec, readoutEl, group: grp.title, el: chartHost };
       }
       charts.push(rec);
@@ -832,7 +940,10 @@ function restoreMaximized() {
     placeholder.remove();
   }
   maximized = null;
-  requestAnimationFrame(fitCharts);
+  requestAnimationFrame(() => {
+    fitCharts();
+    for (const c of ledgerCharts) if (c.hm) c.hm.resize();
+  });
 }
 
 function buildVitals(groupTitles) {
@@ -861,10 +972,42 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
+  const canary = streamEvents.filter((e) => e.kind === "canary").map((e) => e.step);
+  const locked = eventLocked && canary.length > 0;
+  // event-locked x grid: steps relative to each serving
+  const relXs = [];
+  if (locked) for (let d = -EVLOCK_PRE; d <= EVLOCK_POST; d += EVLOCK_GRID) relXs.push(d);
+  // compare-stream points, aligned later per series by nearest step
+  const cmpPts = (compare && compare.kind === current.kind)
+    ? compare.records.filter((r) => cfg.x(r) != null) : null;
+
   for (const c of charts) {
     if (c.hm) { c.hm.setData(records); continue; }
-    const seriesData = c.spec.series.map((s) => pts.map(s.get));
-    c.u.setData([xs].concat(seriesData));
+    let seriesData;
+    if (locked) {
+      // average each (non-compare) series across a window around every serving
+      seriesData = c.spec.series.map((s) => {
+        if (s.cmp) return relXs.map(() => null);
+        const pairs = pts.map((r) => [cfg.x(r), s.get(r)]).filter((p) => p[1] != null);
+        return relXs.map((d) => {
+          let sum = 0, n = 0;
+          for (const ev of canary) {
+            const v = nearestVal(pairs, ev + d, EVLOCK_TOL);
+            if (v != null) { sum += v; n++; }
+          }
+          return n ? sum / n : null;
+        });
+      });
+      c.u.setData([relXs].concat(seriesData));
+    } else {
+      seriesData = c.spec.series.map((s) => {
+        if (!s.cmp) return pts.map(s.get);
+        if (!cmpPts) return xs.map(() => null);
+        const pairs = cmpPts.map((r) => [cfg.x(r), s.get(r)]).filter((p) => p[1] != null);
+        return xs.map((x) => nearestVal(pairs, x, 250));
+      });
+      c.u.setData([xs].concat(seriesData));
+    }
     renderReadout(c.readoutEl, c.spec, seriesData);
   }
   updateOverview();
@@ -873,6 +1016,7 @@ function refreshData() {
 function renderReadout(el, spec, seriesData) {
   let html = "";
   spec.series.forEach((s, i) => {
+    if (s.cmp) return;   // shadow series: visible on the chart, not in the readout
     const st = seriesStats(seriesData[i]);
     if (!st) {
       html += `<div class="ro-row"><span class="ro-dot" style="background:${s.color}"></span>` +
@@ -1008,10 +1152,28 @@ function renderStreamList() {
       `<div class="s-name">${liveDot}${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
       `<div class="s-meta">${s.n_records} records</div>`;
     main.onclick = () => selectStream(s.id, s.kind, li);
+    const cmpBtn = document.createElement("button");
+    cmpBtn.className = "s-cmpbtn" + (compare && compare.id === s.id ? " on" : "");
+    cmpBtn.title = compare && compare.id === s.id
+      ? "Stop comparing against this stream"
+      : "Compare: overlay this stream (dashed) on every line panel";
+    cmpBtn.textContent = "vs";
+    cmpBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (compare && compare.id === s.id) { compare = null; }
+      else {
+        try {
+          const resp = await (await fetch(`/api/streams/${s.id}/records`)).json();
+          compare = { id: s.id, run_dir: s.run_dir, kind: s.kind, records: resp.records || [] };
+        } catch (err) { compare = null; }
+      }
+      renderStreamList();
+      if (current) { buildPanels(current.kind); refreshData(); }
+    };
     const trash = document.createElement("button");
     trash.className = "s-trash"; trash.title = "Hide this stream"; trash.textContent = "🗑";
     trash.onclick = (e) => { e.stopPropagation(); hiddenIds.add(s.id); saveHidden(); renderStreamList(); };
-    li.appendChild(check); li.appendChild(main); li.appendChild(trash);
+    li.appendChild(check); li.appendChild(main); li.appendChild(cmpBtn); li.appendChild(trash);
     list.appendChild(li);
   }
   const clearBtn = $("clear-all");
@@ -1057,6 +1219,11 @@ async function selectStream(id, kind, li) {
   $("now-line").innerHTML = `loading <b>${id}</b> …`;
   const resp = await (await fetch(`/api/streams/${id}/records`)).json();
   records = resp.records || [];
+  try {
+    const ev = await (await fetch(`/api/streams/${id}/events`)).json();
+    streamEvents = ev.events || [];
+  } catch (e) { streamEvents = []; }
+  if (ledgerMode) { loadLedger(); }
   buildPanels(kind);
   refreshData();
   $("now-line").innerHTML = `<b>${id}</b> · ${records.length} records · ${kind}`;
@@ -1154,11 +1321,18 @@ async function buildSettings() {
           `<div id="runs-dir-status" style="font-size:11px;opacity:.75;margin-top:4px"></div></div>`;
   html += `<div class="settings-cat">Display</div>`;
   html += `<div class="set-row"><span>Metric panels</span><button id="open-metric-settings">Open ›</button></div>`;
+  html += `<label class="set-row"><span>Event-locked view <em style="opacity:.6;font-style:normal;font-size:10px">avg around canary servings</em></span>` +
+          `<input type="checkbox" id="evlock-toggle" ${eventLocked ? "checked" : ""}></label>`;
   html += `<div class="settings-cat">Appearance</div>`;
   html += `<div class="set-row"><span>Background simulation</span><button id="open-bg-settings">Open ›</button></div>`;
   panel.innerHTML = html;
   $("settings-close").onclick = () => panel.classList.remove("open");
   $("open-metric-settings").onclick = () => buildMetricSettings();
+  $("evlock-toggle").addEventListener("change", (e) => {
+    eventLocked = e.target.checked;
+    try { localStorage.setItem(EVLOCK_KEY, eventLocked ? "1" : "0"); } catch (err) {}
+    if (current) { buildPanels(current.kind); refreshData(); }
+  });
   $("runs-dir-apply").onclick = async () => {
     const val = $("runs-dir-input").value.trim();
     const st = $("runs-dir-status");
@@ -1334,6 +1508,204 @@ if (sideBtn && sideEl) {
   };
   try { if (localStorage.getItem(SIDEBAR_KEY) === "1") applySidebar(true); } catch (e) {}
 }
+
+// ---- trust-ledger window (Brian, 2026-07-26): a separate full view that
+// replaces the monitor — dimension-level trust history from harvested
+// checkpoint snapshots, investigable without the other panels' distraction.
+function rankCorr(a, b) {
+  const n = a.length;
+  const rank = (v) => {
+    const idx = v.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]);
+    const r = new Array(n);
+    idx.forEach((p, i) => { r[p[1]] = i; });
+    return r;
+  };
+  const ra = rank(a), rb = rank(b);
+  const m = (n - 1) / 2;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = ra[i] - m, y = rb[i] - m;
+    num += x * y; da += x * x; db += y * y;
+  }
+  return da && db ? num / Math.sqrt(da * db) : 0;
+}
+
+function ledgerPanel(host, title, desc) {
+  const panel = document.createElement("div"); panel.className = "panel";
+  const t = document.createElement("div"); t.className = "panel-title";
+  if (desc) attachDesc(t, desc);
+  const span = document.createElement("span"); span.textContent = title;
+  const expand = document.createElement("button");
+  expand.className = "panel-expand"; expand.title = "Enlarge"; expand.textContent = "⤢";
+  t.appendChild(span); t.appendChild(expand);
+  panel.appendChild(t);
+  const body = document.createElement("div"); panel.appendChild(body);
+  host.appendChild(panel);
+  return { panel, body, expand };
+}
+
+function drawLedgerHeatmap(mount, steps, rows) {
+  // rows: array per snapshot of [nDims] trust values; color = log10(v / snapshot median)
+  const canvas = document.createElement("canvas"); canvas.className = "lg-canvas";
+  const tip = document.createElement("div"); tip.className = "u-tip"; tip.style.display = "none";
+  const foot = document.createElement("div"); foot.className = "hm-foot";
+  foot.textContent = "color: log-ratio to snapshot median — dark/blue = distrusted, red = highly trusted";
+  mount.appendChild(canvas); mount.appendChild(foot); mount.appendChild(tip);
+  mount.style.position = "relative";
+  const ctx = canvas.getContext("2d");
+  const nSnap = rows.length, nDims = nSnap ? rows[0].length : 0;
+  const medians = rows.map((r) => {
+    const s = [...r].sort((a, b) => a - b);
+    return s[s.length >> 1] || 1;
+  });
+  function draw() {
+    const w = Math.max(160, mount.clientWidth - 4);
+    canvas.width = w; canvas.height = nDims || 40;
+    ctx.clearRect(0, 0, w, canvas.height);
+    if (!nSnap) {
+      ctx.fillStyle = "#5d6a80"; ctx.font = "11px monospace";
+      ctx.fillText("no harvested ledger snapshots for this run", 6, 16);
+      return;
+    }
+    const cw = w / nSnap;
+    for (let j = 0; j < nSnap; j++) {
+      const med = medians[j];
+      for (let d = 0; d < nDims; d++) {
+        const t = Math.max(-1, Math.min(1, Math.log10((rows[j][d] || 1e-12) / med)));
+        const c = heatColor((t + 1) / 2);
+        ctx.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+        ctx.fillRect(j * cw, d, Math.ceil(cw), 1);
+      }
+    }
+  }
+  canvas.addEventListener("mousemove", (e) => {
+    if (!nSnap) return;
+    const r = canvas.getBoundingClientRect();
+    const j = Math.min(nSnap - 1, Math.max(0, Math.floor((e.clientX - r.left) / (r.width / nSnap))));
+    const d = Math.min(nDims - 1, Math.max(0, Math.floor((e.clientY - r.top) / (r.height / nDims))));
+    const v = rows[j][d];
+    tip.innerHTML = `<div class="u-tip-x">dim ${d} · step ${gint(steps[j])}</div>` +
+      `<div class="u-tip-row">trust <b>${g(v)}</b> (${g(v / medians[j])}× median)</div>`;
+    tip.style.display = "block";
+    const mr = mount.getBoundingClientRect();
+    let lx = e.clientX - mr.left + 14, ty = e.clientY - mr.top + 14;
+    if (lx + tip.offsetWidth > mount.clientWidth) lx = e.clientX - mr.left - tip.offsetWidth - 14;
+    tip.style.left = Math.max(0, lx) + "px"; tip.style.top = Math.max(0, ty) + "px";
+  });
+  canvas.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  draw();
+  return { hm: { resize: draw, destroy() { mount.innerHTML = ""; } } };
+}
+
+function setLedgerMode(on) {
+  ledgerMode = on;
+  $("statstrip").style.display = on ? "none" : "";
+  $("panels").style.display = on ? "none" : "";
+  $("ledger-panels").style.display = on ? "" : "none";
+  if (on) $("attention").style.display = "none";
+  const btn = $("ledger-btn");
+  if (btn) btn.classList.toggle("on", on);
+  if (on) loadLedger();
+  else {
+    destroyLedger();
+    if (current) { updateOverview(); requestAnimationFrame(fitCharts); }
+  }
+}
+function destroyLedger() {
+  ledgerCharts.forEach((c) => { if (c.hm) c.hm.destroy(); else if (c.u) c.u.destroy(); });
+  ledgerCharts = [];
+  $("ledger-panels").innerHTML = "";
+}
+async function loadLedger() {
+  const host = $("ledger-panels");
+  destroyLedger();
+  if (!current) { host.innerHTML = `<div class="s-meta" style="padding:20px">select a stream first</div>`; return; }
+  host.innerHTML = `<div class="s-meta" style="padding:20px">loading ledger…</div>`;
+  let data;
+  try { data = await (await fetch(`/api/streams/${current.id}/ledger`)).json(); }
+  catch (e) { host.innerHTML = `<div class="s-meta" style="padding:20px">ledger fetch failed</div>`; return; }
+  host.innerHTML = "";
+  const steps = data.steps || [], blocks = data.blocks || {};
+  const names = Object.keys(blocks).sort();
+  if (!steps.length || !names.length) {
+    host.innerHTML = `<div class="s-meta" style="padding:20px">no harvested ledger snapshots for this run — ` +
+      `the checkpoint harvester creates them (ledger_harvest_* next to the run dir)</div>`;
+    return;
+  }
+  const section = document.createElement("section"); section.className = "group";
+  const head = document.createElement("div"); head.className = "group-head";
+  head.innerHTML = `<span class="group-dot neutral"></span><span class="group-title">Trust ledger · ` +
+    `${steps.length} snapshots · steps ${gint(steps[0])}–${gint(steps[steps.length - 1])}</span>`;
+  section.appendChild(head);
+  const body = document.createElement("div"); body.className = "group-body panels-grid";
+  section.appendChild(body); host.appendChild(section);
+
+  // per-block dims×time heatmaps
+  for (const name of names) {
+    const blk = name.split(".")[1];
+    const { body: mount, expand, panel } = ledgerPanel(body,
+      `LEDGER · BLOCK ${blk} · dims × time`,
+      "Every row is one input dimension's trust level over the run (from harvested checkpoints). A dark horizontal streak = a dimension the block persistently distrusts — a scar candidate. Color is relative to each snapshot's median, so drift doesn't wash out the picture.");
+    const rec = Object.assign(drawLedgerHeatmap(mount, steps, blocks[name]), { el: mount });
+    ledgerCharts.push(rec);
+    expand.onclick = () => toggleMaximize(panel, rec);
+  }
+
+  // churn panel: rank correlation between consecutive snapshots
+  if (steps.length > 1) {
+    const { body: mount, expand, panel } = ledgerPanel(body,
+      "TRUST-ORDER CHURN · rank corr, consecutive snapshots",
+      "How much the trust ORDERING reshuffles between snapshots (1.0 = frozen order, lower = more reshuffling). The background against which any persistence claim must be judged: a scar only counts if it outlives this churn.");
+    const xs = steps.slice(1);
+    const palette = [C.blue, C.teal, C.green, C.purple, C.orange];
+    const seriesDefs = names.map((name, i) => ({
+      label: `blk${name.split(".")[1]}`, stroke: palette[i % palette.length], width: 1.8,
+    }));
+    const ys = names.map((name) => {
+      const rows = blocks[name];
+      return rows.slice(1).map((r, i) => rankCorr(rows[i], r));
+    });
+    const u = new uPlot({
+      width: Math.max(300, mount.clientWidth || 500), height: 200,
+      scales: { x: { time: false } },
+      axes: [Object.assign(axisStyle(), { label: "step" }), axisStyle()],
+      series: [{}].concat(seriesDefs),
+      legend: { show: false },
+      cursor: { points: { size: 7 } },
+      plugins: [tooltipPlugin("step"), wheelZoomPlugin(), dragPanPlugin()],
+    }, [xs].concat(ys), mount);
+    const rec = { u, el: mount };
+    ledgerCharts.push(rec);
+    expand.onclick = () => toggleMaximize(panel, rec);
+  }
+
+  // bottom-k tracker: least-trusted dims now, with streaks
+  {
+    const { body: mount } = ledgerPanel(body, "LEAST-TRUSTED DIMENSIONS · now, with streaks",
+      "The five least-trusted dimensions per block at the latest snapshot, with how many consecutive snapshots each has spent in the bottom five. Long streaks are durable distrust — the scar candidates worth naming.");
+    const K = 5;
+    let html = `<table class="lg-table"><tr><th>block</th><th>dim</th><th>trust ×median</th><th>bottom-${K} streak</th></tr>`;
+    for (const name of names) {
+      const rows = blocks[name];
+      const botSets = rows.map((r) => {
+        const idx = r.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]).slice(0, K).map((p) => p[1]);
+        return new Set(idx);
+      });
+      const last = rows[rows.length - 1];
+      const med = [...last].sort((a, b) => a - b)[last.length >> 1] || 1;
+      const bottom = last.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]).slice(0, K);
+      for (const [v, d] of bottom) {
+        let streak = 0;
+        for (let j = botSets.length - 1; j >= 0 && botSets[j].has(d); j--) streak++;
+        html += `<tr><td>${name.split(".")[1]}</td><td>${d}</td>` +
+          `<td>${g(v / med)}</td><td>${streak}/${rows.length}</td></tr>`;
+      }
+    }
+    mount.innerHTML = html + "</table>";
+  }
+}
+const ledgerBtn = $("ledger-btn");
+if (ledgerBtn) ledgerBtn.onclick = () => setLedgerMode(!ledgerMode);
 
 $("refresh").onclick = loadStreams;
 const clearSelBtn = $("clear-selected");

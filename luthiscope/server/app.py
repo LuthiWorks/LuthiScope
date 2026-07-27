@@ -159,6 +159,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return {"id": s.stream_id, "kind": s.kind, "records": _scrub_nonfinite(recs)}
 
+    @app.get("/api/streams/{stream_id:path}/events")
+    def get_events(stream_id: str):
+        """Researcher-authored event marks for a run: read-only pass-through of
+        <run_dir>/events.jsonl (one {step, label, event?} object per line).
+        LuthiScope never writes this file; producers or researchers do. Missing
+        file = no events, never an error."""
+        s = current_streams_map().get(stream_id)
+        if s is None:
+            raise HTTPException(status_code=404, detail=f"unknown stream: {stream_id}")
+        path = s.path.parent / "events.jsonl"
+        events = []
+        try:
+            import json as _json
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = _json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(e, dict) and isinstance(e.get("step"), (int, float)):
+                    events.append({
+                        "step": e["step"],
+                        "label": str(e.get("label", e.get("event", "event"))),
+                        "kind": str(e.get("event", "event")),
+                    })
+        except OSError:
+            pass
+        events.sort(key=lambda e: e["step"])
+        return {"id": s.stream_id, "events": events}
+
+    @app.get("/api/streams/{stream_id:path}/ledger")
+    def get_ledger(stream_id: str):
+        """Harvested trust-ledger snapshots for a run (dimension-level precision
+        buffers extracted from rolling checkpoints by the external harvester).
+        Looks for a sibling ledger_harvest_* directory containing per-snapshot
+        JSON files {step, ledgers: {name: [floats]}}. Read-only."""
+        s = current_streams_map().get(stream_id)
+        if s is None:
+            raise HTTPException(status_code=404, detail=f"unknown stream: {stream_id}")
+        run_dir = s.path.parent
+        base = run_dir.parent
+        legacy = {"living_v5_4x_d4_512d_seed43": "ledger_harvest_seed43",
+                  "living_v5_4x_d4_512d_seed44": "ledger_harvest_seed44"}
+        candidates = [base / legacy.get(run_dir.name, ""),
+                      base / f"ledger_harvest_{run_dir.name}"]
+        harvest = next((c for c in candidates if c.name and c.is_dir()), None)
+        if harvest is None:
+            return {"id": s.stream_id, "steps": [], "blocks": {}}
+        import json as _json
+        snaps = []
+        for p in sorted(harvest.glob("ledger_step_*.json")):
+            try:
+                d = _json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(d.get("step"), (int, float)) and isinstance(d.get("ledgers"), dict):
+                    snaps.append(d)
+            except (OSError, ValueError):
+                continue
+        snaps.sort(key=lambda d: d["step"])
+        steps = [int(d["step"]) for d in snaps]
+        blocks: dict[str, list] = {}
+        for d in snaps:
+            for k, v in d["ledgers"].items():
+                blocks.setdefault(k, []).append(v)
+        return {"id": s.stream_id, "steps": steps,
+                "blocks": _scrub_nonfinite(blocks)}
+
     @app.websocket("/ws/streams/{stream_id:path}")
     async def live(websocket: WebSocket, stream_id: str):
         await websocket.accept()
