@@ -31,7 +31,7 @@ const GROUPS = {
         // log ever emits them, so the tiles read "no data" forever and
         // the (invisible) sparse heldout points made the whole panel
         // look dead (Brian's report).
-        { title: "HELDOUT EVAL (epoch boundaries)", sparse: true, series: [
+        { title: "HELDOUT EVAL (epoch boundaries)", sparse: true, marks: "epoch", series: [
           { label: "heldout_l_pred", color: C.orange, good: "down", get: (r) => num(r.heldout?.text?.l_pred_mean) },
           { label: "heldout_nmse", color: C.red, good: "down", get: (r) => num(r.heldout?.text?.nmse_mean) },
         ]},
@@ -40,10 +40,10 @@ const GROUPS = {
         { title: "GRADIENT NORM (when emitted)", series: [
           { label: "grad_norm", color: C.orange, good: null, get: (r) => num(r.grad_norm) },
         ]},
-        { title: "LEARNING RATE (when emitted)", series: [
+        { title: "LEARNING RATE (when emitted)", marks: false, series: [
           { label: "lr", color: C.teal, good: null, get: (r) => num(r.lr) },
         ]},
-        { title: "PLASTICITY TAPER (when emitted)", series: [
+        { title: "PLASTICITY TAPER (when emitted)", marks: false, series: [
           // Schedule, not health (run-3 build, 2026-07-17): declining
           // to its floor is BY DESIGN — the formative->mature taper.
           { label: "taper_scale", color: C.purple, good: null, get: (r) => num(r.taper_scale) },
@@ -120,19 +120,19 @@ const GROUPS = {
         ]},
       ]},
       { title: "Throughput", panels: [
-        { title: "TOKENS CONSUMED", series: [
+        { title: "TOKENS CONSUMED", marks: false, series: [
           { label: "tokens", color: C.green, good: "up", get: (r) => {
             const t = r.tokens_consumed; if (!t) return null;
             let s = 0; for (const k in t) { if (typeof t[k] === "number") s += t[k]; } return s;
           } },
         ]},
-        { title: "ELAPSED (hours)", series: [
+        { title: "ELAPSED (hours)", marks: false, series: [
           { label: "elapsed_h", color: C.gray, good: null, get: (r) => num(r.elapsed_seconds) == null ? null : r.elapsed_seconds / 3600 },
         ]},
-        { title: "STEP TIME (when emitted)", series: [
+        { title: "STEP TIME (when emitted)", marks: false, series: [
           { label: "step_time", color: C.orange, good: "down", get: (r) => num(r.step_time ?? r.sec_per_step ?? r.step_seconds) },
         ]},
-        { title: "RATE · SAMPLES & TOKENS /s (when emitted)", series: [
+        { title: "RATE · SAMPLES & TOKENS /s (when emitted)", marks: false, series: [
           { label: "samples_s", color: C.green, good: "up", get: (r) => num(r.samples_per_sec ?? r.samples_per_second ?? r.throughput) },
           { label: "tokens_s", color: C.teal, good: "up", get: (r) => num(r.tokens_per_sec ?? r.tokens_per_second) },
         ]},
@@ -209,13 +209,13 @@ const GROUPS = {
         ]},
       ]},
       { title: "Systems & resources", panels: [
-        { title: "GPU MEMORY (when emitted)", series: [
+        { title: "GPU MEMORY (when emitted)", marks: false, series: [
           { label: "gpu_mem", color: C.blue, good: null, get: (r) => num(r.gpu_mem_gb ?? r.gpu_memory_gb ?? r.mem_allocated_gb ?? r.gpu_mem) },
         ]},
-        { title: "GPU UTILIZATION (when emitted)", series: [
+        { title: "GPU UTILIZATION (when emitted)", marks: false, series: [
           { label: "gpu_util", color: C.green, good: null, get: (r) => num(r.gpu_util ?? r.gpu_utilization) },
         ]},
-        { title: "MFU (when emitted)", series: [
+        { title: "MFU (when emitted)", marks: false, series: [
           { label: "mfu", color: C.purple, good: "up", get: (r) => num(r.mfu ?? r.model_flops_util) },
         ]},
       ]},
@@ -568,7 +568,21 @@ function dragPanPlugin() {
 // vertical event marks (canary/epoch) from the stream's events.jsonl. In
 // event-locked mode a single mark sits at Δ0. Hovering a mark while the
 // panel is ENLARGED shows its name (Brian's spec: name only, enlarged only).
-function eventMarkersPlugin() {
+// Which event marks belong on THIS panel (Brian, 2026-07-26: marks only where
+// the data they reflect is relevant). Two rules:
+//   - events.jsonl steps are TRAINING steps; cognition panels are indexed by
+//     cycle, so marks there would be plain wrong, not merely noisy.
+//   - a panel declares `marks: false` (schedules, odometers, host telemetry —
+//     nothing the model does can react to a serving) or `marks: "epoch"`
+//     (epoch-boundary data only). Default: all marks.
+function panelMarks(spec) {
+  if (!current || current.kind !== "training") return [];
+  if (spec.marks === false) return [];
+  if (spec.marks === "epoch") return streamEvents.filter((e) => e.kind === "epoch");
+  return streamEvents;
+}
+
+function eventMarkersPlugin(spec) {
   const COLORS = { canary: "rgba(251,146,60,0.55)", epoch: "rgba(148,163,184,0.45)" };
   let tip = null;
   return {
@@ -580,7 +594,8 @@ function eventMarkersPlugin() {
         u.over.addEventListener("mousemove", (e) => {
           const panel = u.root.closest(".panel");
           if (!panel || !panel.classList.contains("maximized")) { tip.style.display = "none"; return; }
-          const marks = eventLocked ? [{ step: 0, label: "serving (Δ0)" }] : streamEvents;
+          const eligible = panelMarks(spec);
+          const marks = (eventLocked && eligible.length) ? [{ step: 0, label: "serving (Δ0)" }] : eligible;
           if (!marks.length) { tip.style.display = "none"; return; }
           const rect = u.over.getBoundingClientRect();
           const px = e.clientX - rect.left;
@@ -599,7 +614,8 @@ function eventMarkersPlugin() {
         u.over.addEventListener("mouseleave", () => { if (tip) tip.style.display = "none"; });
       },
       draw: (u) => {
-        const marks = eventLocked ? [{ step: 0, kind: "canary" }] : streamEvents;
+        const eligible = panelMarks(spec);
+        const marks = (eventLocked && eligible.length) ? [{ step: 0, kind: "canary" }] : eligible;
         if (!marks.length) return;
         const ctx = u.ctx;
         ctx.save();
@@ -659,7 +675,7 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
         },
       },
     },
-    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin(), eventMarkersPlugin()],
+    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin(), eventMarkersPlugin(spec)],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
