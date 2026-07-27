@@ -247,6 +247,7 @@ html, body {
   border-radius: 6px; padding: 2px 9px; cursor: pointer; font-family: inherit; font-size: 12px;
 }
 .ev-nav:hover { color: var(--c-opt); border-color: var(--c-opt); }
+.ev-nav.on { color: var(--c-opt); border-color: var(--c-opt); }
 .ev-label { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 /* compare button on stream rows */
 .s-cmpbtn {

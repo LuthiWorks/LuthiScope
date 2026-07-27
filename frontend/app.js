@@ -595,46 +595,74 @@ function dragPanPlugin() {
 // are NOT derivable here — no metric carries what text was served — so those
 // come from events.jsonl, written by the producer or by a deterministic
 // canary-replay script. Declaration or arithmetic, never interpretation.
-function deriveEvents(recs) {
+// Which series a given event scope concerns — a mark only belongs on a panel
+// whose data could actually show the thing (Brian, 2026-07-26).
+const SCOPE_SERIES = {
+  grad: ["grad_norm"],
+  loss: ["loss", "l_pred", "l_sigreg", "ce_loss", "recon"],
+  substrate: ["pred_frob", "err_acc", "set_point_drift", "update_rate",
+              "consol_fires", "precision", "precision_spread"],
+  trust: ["precision", "precision_spread"],
+  epoch: ["heldout_l_pred", "heldout_nmse", "val_loss", "val_acc"],
+};
+
+// A MARK MEANS SOMETHING REMARKABLE HAPPENED. Exposures (a canary document
+// being served) are NOT events: the v5 family met the Greek page 36 times
+// with no reaction, so 36 identical marks would assert 36 events that never
+// occurred. An exposure earns a mark only when a derived event coincides
+// with it — and then the mark is the EVENT, annotated with the coincidence.
+const COINCIDE_STEPS = 300;
+
+function deriveEvents(recs, exposures) {
   const out = [];
   const grads = recs.map((r) => num(r.grad_norm)).filter((v) => v != null).sort((a, b) => a - b);
   const gmed = grads.length ? grads[grads.length >> 1] : null;
   let prevFires = null, prevEpoch = null;
+  const add = (step, scope, label) => out.push({ step, kind: "derived", scope, label });
   for (const r of recs) {
     const step = num(r.step);
     if (step == null) continue;
     const fires = num(r.substrate?.consolidation_fires);
     if (fires != null && prevFires != null && fires > prevFires) {
-      out.push({ step, kind: "derived", label: `consolidation fire (+${g(fires - prevFires)}, total ${g(fires)})` });
+      add(step, "substrate", `consolidation fire (+${g(fires - prevFires)}, total ${g(fires)})`);
     }
     if (fires != null) prevFires = fires;
     const ep = num(r.epoch);
     if (ep != null && prevEpoch != null && ep !== prevEpoch) {
-      out.push({ step, kind: "epoch", label: `epoch ${gint(ep)} begins` });
+      out.push({ step, kind: "epoch", scope: "epoch", label: `epoch ${gint(ep)} begins` });
     }
     if (ep != null) prevEpoch = ep;
-    if (r.nonfinite === true) out.push({ step, kind: "derived", label: "non-finite loss/gradient flagged" });
+    if (r.nonfinite === true) add(step, "loss", "non-finite loss/gradient flagged");
     const gn = num(r.grad_norm);
     if (gn != null && gmed && gn > 5 * gmed) {
-      out.push({ step, kind: "derived", label: `gradient shock (${g(gn)}, ${g(gn / gmed)}× median)` });
+      add(step, "grad", `gradient shock (${g(gn)}, ${g(gn / gmed)}× median)`);
     }
+  }
+  // annotate any event that coincides with a declared exposure
+  for (const e of out) {
+    const near = exposures.find((x) => Math.abs(x.step - e.step) <= COINCIDE_STEPS);
+    if (near) e.label += ` — at ${near.label}`;
   }
   return out;
 }
 
-// the event list in play for the current stream: declared (events.jsonl)
-// plus derived, sorted; empty when marks are off
+// Events in play: derived remarkable occurrences, plus declared lifecycle
+// marks from events.jsonl. Declared EXPOSURES (kind "canary") are context for
+// labeling, never marks of their own.
 function activeEvents() {
   if (!showEventMarks || !current || current.kind !== "training") return [];
-  return streamEvents.concat(derivedEvents).sort((a, b) => a.step - b.step);
+  const declaredNonExposure = streamEvents.filter((e) => e.kind !== "canary");
+  return derivedEvents.concat(declaredNonExposure).sort((a, b) => a.step - b.step);
 }
 
 function panelMarks(spec) {
   const all = activeEvents();
-  if (!all.length) return [];
-  if (spec.marks === false) return [];
-  if (spec.marks === "epoch") return all.filter((e) => e.kind === "epoch");
-  return all;
+  if (!all.length || spec.marks === false) return [];
+  const labels = new Set((spec.series || []).map((s) => s.label));
+  return all.filter((e) => {
+    const scoped = SCOPE_SERIES[e.scope || "epoch"] || [];
+    return scoped.some((l) => labels.has(l));
+  });
 }
 
 function eventMarkersPlugin(spec) {
@@ -1051,7 +1079,12 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
-  const evList = activeEvents();
+  // Event-locked view centres on EXPOSURES when a canary is declared (the
+  // "what does the mind do when X arrives?" question, answerable even when
+  // nothing remarkable happens), else on the derived events.
+  const exposures = (showEventMarks && current.kind === "training")
+    ? streamEvents.filter((e) => e.kind === "canary") : [];
+  const evList = exposures.length ? exposures : activeEvents();
   const canary = evList.map((e) => e.step);
   const locked = eventLocked && canary.length > 0;
   // one event, or all of them averaged
@@ -1101,7 +1134,11 @@ function refreshData() {
 // events one at a time, or average all of them.
 function renderEvlockBar(evList, locked) {
   let bar = $("evlock-bar");
-  if (!locked) { if (bar) bar.style.display = "none"; return; }
+  // Show the bar whenever the locked view is switched on — including when it
+  // has nothing to lock onto, so the reason is visible instead of the whole
+  // control silently vanishing (Brian: "the nav bar is not present").
+  const wanted = eventLocked && current && current.kind === "training";
+  if (!wanted) { if (bar) bar.style.display = "none"; return; }
   if (!bar) {
     bar = document.createElement("div");
     bar.id = "evlock-bar"; bar.className = "evlock-bar";
@@ -1109,6 +1146,11 @@ function renderEvlockBar(evList, locked) {
     main.insertBefore(bar, $("panels"));
   }
   bar.style.display = "";
+  if (!locked || !evList.length) {
+    bar.innerHTML = `<span class="ev-label">event-locked view is on, but this stream has no events ` +
+      (showEventMarks ? "to lock onto" : "— enable “Event marks” in Settings › Display") + `</span>`;
+    return;
+  }
   const n = evList.length;
   const cur = evlockIndex == null ? null : evList[evlockIndex];
   const label = cur
@@ -1116,7 +1158,7 @@ function renderEvlockBar(evList, locked) {
     : `averaging all ${n} events`;
   bar.innerHTML =
     `<button class="ev-nav" data-ev="prev" title="Previous event">‹</button>` +
-    `<button class="ev-nav" data-ev="avg" title="Average all events"${evlockIndex == null ? ' class="on"' : ""}>avg</button>` +
+    `<button class="ev-nav${evlockIndex == null ? " on" : ""}" data-ev="avg" title="Average all events">avg</button>` +
     `<button class="ev-nav" data-ev="next" title="Next event">›</button>` +
     `<span class="ev-label">${label}</span>`;
   bar.querySelectorAll(".ev-nav").forEach((b) => {
@@ -1340,7 +1382,7 @@ async function selectStream(id, kind, li) {
     const ev = await (await fetch(`/api/streams/${id}/events`)).json();
     streamEvents = ev.events || [];
   } catch (e) { streamEvents = []; }
-  derivedEvents = deriveEvents(records);
+  derivedEvents = deriveEvents(records, streamEvents.filter((e) => e.kind === "canary"));
   evlockIndex = null;
   if (ledgerMode) { loadLedger(); }
   buildPanels(kind);
