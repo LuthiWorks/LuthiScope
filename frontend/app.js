@@ -381,12 +381,24 @@ let compare = null;     // {id, run_dir, kind, records} — the ONE comparison s
 let ledgerMode = false; // trust-ledger window replaces the monitor view
 let ledgerCharts = [];  // panel recs for the ledger view (managed separately)
 
-// Event-locked averaging (config > Display): line panels show the mean
-// trace across a window around every canary event instead of the raw
-// timeline. Persisted; needs events to do anything.
+// Interpretability extras are OPT-IN and default OFF (Brian, 2026-07-26:
+// new features must not complicate the default view). One-time migration
+// clears any pref set while they were on-by-default.
+const EVMARKS_KEY = "luthiscope.eventMarks";
 const EVLOCK_KEY = "luthiscope.eventLocked";
+try {
+  if (localStorage.getItem("luthiscope.optinMigrated") !== "1") {
+    localStorage.removeItem(EVLOCK_KEY);
+    localStorage.removeItem(EVMARKS_KEY);
+    localStorage.setItem("luthiscope.optinMigrated", "1");
+  }
+} catch (e) {}
+let showEventMarks = false;
 let eventLocked = false;
-try { eventLocked = localStorage.getItem(EVLOCK_KEY) === "1"; } catch (e) {}
+try {
+  showEventMarks = localStorage.getItem(EVMARKS_KEY) === "1";
+  eventLocked = localStorage.getItem(EVLOCK_KEY) === "1";
+} catch (e) {}
 const EVLOCK_PRE = 2000, EVLOCK_POST = 5000, EVLOCK_GRID = 100, EVLOCK_TOL = 60;
 
 function hexToRgba(hex, a) {
@@ -576,6 +588,7 @@ function dragPanPlugin() {
 //     nothing the model does can react to a serving) or `marks: "epoch"`
 //     (epoch-boundary data only). Default: all marks.
 function panelMarks(spec) {
+  if (!showEventMarks) return [];          // off unless explicitly enabled
   if (!current || current.kind !== "training") return [];
   if (spec.marks === false) return [];
   if (spec.marks === "epoch") return streamEvents.filter((e) => e.kind === "epoch");
@@ -592,8 +605,8 @@ function eventMarkersPlugin(spec) {
         tip.className = "u-tip"; tip.style.display = "none";
         u.over.appendChild(tip);
         u.over.addEventListener("mousemove", (e) => {
-          const panel = u.root.closest(".panel");
-          if (!panel || !panel.classList.contains("maximized")) { tip.style.display = "none"; return; }
+          // name-on-hover in ANY panel size: an unexplained line is worse
+          // than no line (Brian, 2026-07-26)
           const eligible = panelMarks(spec);
           const marks = (eventLocked && eligible.length) ? [{ step: 0, label: "serving (Δ0)" }] : eligible;
           if (!marks.length) { tip.style.display = "none"; return; }
@@ -886,7 +899,8 @@ function buildPanels(kind) {
       const chartHost = document.createElement("div"); panel.appendChild(chartHost);
       body.appendChild(panel);
       let rec;
-      const xl = (eventLocked && streamEvents.some((e) => e.kind === "canary"))
+      const xl = (eventLocked && showEventMarks && kind === "training"
+                  && streamEvents.some((e) => e.kind === "canary"))
         ? "Δ steps from serving" : cfg.xlabel;
       if (spec.type === "heatmap") {
         const hm = makeHeatmap(chartHost, spec, cfg.xlabel);
@@ -958,7 +972,13 @@ function restoreMaximized() {
   maximized = null;
   requestAnimationFrame(() => {
     fitCharts();
-    for (const c of ledgerCharts) if (c.hm) c.hm.resize();
+    // Ledger charts live outside `charts`, so fitCharts never reached them:
+    // a restored uPlot kept its 84vh maximized canvas and hung behind the
+    // grid as a ghost (Brian's report, 2026-07-26). Resize both kinds.
+    for (const c of ledgerCharts) {
+      if (c.hm) c.hm.resize();
+      else if (c.u) c.u.setSize({ width: (c.el && c.el.clientWidth) || 500, height: 200 });
+    }
   });
 }
 
@@ -988,7 +1008,8 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
-  const canary = streamEvents.filter((e) => e.kind === "canary").map((e) => e.step);
+  const canary = (showEventMarks && current.kind === "training")
+    ? streamEvents.filter((e) => e.kind === "canary").map((e) => e.step) : [];
   const locked = eventLocked && canary.length > 0;
   // event-locked x grid: steps relative to each serving
   const relXs = [];
@@ -1337,13 +1358,25 @@ async function buildSettings() {
           `<div id="runs-dir-status" style="font-size:11px;opacity:.75;margin-top:4px"></div></div>`;
   html += `<div class="settings-cat">Display</div>`;
   html += `<div class="set-row"><span>Metric panels</span><button id="open-metric-settings">Open ›</button></div>`;
-  html += `<label class="set-row"><span>Event-locked view <em style="opacity:.6;font-style:normal;font-size:10px">avg around canary servings</em></span>` +
-          `<input type="checkbox" id="evlock-toggle" ${eventLocked ? "checked" : ""}></label>`;
+  html += `<label class="set-row"><span>Event marks <em style="opacity:.6;font-style:normal;font-size:10px">vertical lines from events.jsonl; hover to name</em></span>` +
+          `<input type="checkbox" id="evmarks-toggle" ${showEventMarks ? "checked" : ""}></label>`;
+  html += `<label class="set-row"><span>Event-locked view <em style="opacity:.6;font-style:normal;font-size:10px">avg around marks — needs Event marks</em></span>` +
+          `<input type="checkbox" id="evlock-toggle" ${eventLocked ? "checked" : ""} ${showEventMarks ? "" : "disabled"}></label>`;
   html += `<div class="settings-cat">Appearance</div>`;
   html += `<div class="set-row"><span>Background simulation</span><button id="open-bg-settings">Open ›</button></div>`;
   panel.innerHTML = html;
   $("settings-close").onclick = () => panel.classList.remove("open");
   $("open-metric-settings").onclick = () => buildMetricSettings();
+  $("evmarks-toggle").addEventListener("change", (e) => {
+    showEventMarks = e.target.checked;
+    try { localStorage.setItem(EVMARKS_KEY, showEventMarks ? "1" : "0"); } catch (err) {}
+    if (!showEventMarks && eventLocked) {   // locked view is meaningless without marks
+      eventLocked = false;
+      try { localStorage.setItem(EVLOCK_KEY, "0"); } catch (err) {}
+    }
+    buildSettings();
+    if (current) { buildPanels(current.kind); refreshData(); }
+  });
   $("evlock-toggle").addEventListener("change", (e) => {
     eventLocked = e.target.checked;
     try { localStorage.setItem(EVLOCK_KEY, eventLocked ? "1" : "0"); } catch (err) {}
@@ -1546,14 +1579,18 @@ function rankCorr(a, b) {
   return da && db ? num / Math.sqrt(da * db) : 0;
 }
 
-function ledgerPanel(host, title, desc) {
+function ledgerPanel(host, title, desc, expandable = true) {
   const panel = document.createElement("div"); panel.className = "panel";
   const t = document.createElement("div"); t.className = "panel-title";
   if (desc) attachDesc(t, desc);
   const span = document.createElement("span"); span.textContent = title;
-  const expand = document.createElement("button");
-  expand.className = "panel-expand"; expand.title = "Enlarge"; expand.textContent = "⤢";
-  t.appendChild(span); t.appendChild(expand);
+  t.appendChild(span);
+  let expand = null;
+  if (expandable) {   // tables have nothing to enlarge
+    expand = document.createElement("button");
+    expand.className = "panel-expand"; expand.title = "Enlarge"; expand.textContent = "⤢";
+    t.appendChild(expand);
+  }
   panel.appendChild(t);
   const body = document.createElement("div"); panel.appendChild(body);
   host.appendChild(panel);
@@ -1698,7 +1735,8 @@ async function loadLedger() {
   // bottom-k tracker: least-trusted dims now, with streaks
   {
     const { body: mount } = ledgerPanel(body, "LEAST-TRUSTED DIMENSIONS · now, with streaks",
-      "The five least-trusted dimensions per block at the latest snapshot, with how many consecutive snapshots each has spent in the bottom five. Long streaks are durable distrust — the scar candidates worth naming.");
+      "The five least-trusted dimensions per block at the latest snapshot, with how many consecutive snapshots each has spent in the bottom five. Long streaks are durable distrust — the scar candidates worth naming.",
+      false);
     const K = 5;
     let html = `<table class="lg-table"><tr><th>block</th><th>dim</th><th>trust ×median</th><th>bottom-${K} streak</th></tr>`;
     for (const name of names) {
