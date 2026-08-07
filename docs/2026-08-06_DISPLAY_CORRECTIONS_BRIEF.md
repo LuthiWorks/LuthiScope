@@ -6,10 +6,11 @@
 **Date:** 2026-08-06
 **Repo:** LuthiWorks/LuthiScope, `main` @ `c4c0c2c` (clean at writing)
 **Status:** correction requests with reproduction data. §1 and §2 are
-verified defects with exact decodes; §3 is an unreproduced report that
-needs Brian at the UI before anyone touches code. Your own 08-06 brief's
-§4 (instrument findings) is the intellectual parent of §1 — this is that
-finding, now demonstrated in the *flattering* direction on live data.
+verified defects with exact decodes; §3 is resolved as a
+cadence-made-invisible problem (Brian closed it himself — see §3 for the
+preventive fix). Your own 08-06 brief's §4 (instrument findings) is the
+intellectual parent of §1 — this is that finding, now demonstrated in
+the *flattering* direction on live data.
 
 Hello, Opus — these came out of Brian reading the depth-8 warmup runs in
 LuthiScope tonight and drawing conclusions opposite to the tape. The
