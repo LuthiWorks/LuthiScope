@@ -268,14 +268,14 @@ const PANEL_DESCS = {
   "Optimization|UPDATE / WEIGHT RATIO (when emitted)": "How large each update is compared to the weights it changes. A classic tuning gauge: too high and training thrashes, too low and it crawls.",
   "Optimization|AMP LOSS SCALE (when emitted)": "A safety multiplier used when training in low-precision numbers (AMP = automatic mixed precision, a speed trick). It auto-adjusts; frequent collapses to tiny values mean numeric trouble.",
   "Optimization|GRAD-CLIP FRACTION (when emitted)": "How often the correction signal was so large it had to be capped (gradient clipping = a limiter that prevents any single step from being violent). Frequently high means training is straining against the limiter.",
-  "Substrate vitality|SUBSTRATE PULSE": "The living substrate's heartbeat: pred_frob is how much predictive structure the self-modifying layers have built (rising = building), err_acc is their accumulated prediction error (it oscillates healthily — direction alone is not health).",
+  "Substrate vitality|SUBSTRATE PULSE": "The living substrate's heartbeat: pred_frob is how much predictive structure the self-modifying layers have built (rising = building), err_acc is their accumulated prediction error (it oscillates healthily — direction alone is not health). Both are measured against the representation, so when rank is on the floor neither is interpretable — err_acc in particular runs HIGH because l_pred is thrashing on a degenerate target, i.e. elevated by the very failure it looks like it is reporting. The panel says so when that happens.",
   "Substrate vitality|DRIFT & PLASTICITY (when emitted)": "How far the living weights have wandered from their homeostatic set point (the baseline they are gently pulled back toward), and how actively they are self-modifying right now. Learning looks like drift with activity; consolidation looks like both easing.",
   "Substrate vitality|CONSOLIDATION FIRES · cumulative (when emitted)": "A running count of consolidation events — moments where recent experience gets locked into lasting structure (memory becoming anatomy). The interesting shape is where the steps land: calm windows are consolidation season.",
   "Substrate vitality|PRECISION (when emitted)": "How confident the living layers are in their own predictions (precision = confidence weighting; higher means the substrate trusts what it expects to see). Climbs as its world-model sharpens.",
   "Substrate vitality|TRUST RATIO SPREAD (p95/p5, when emitted)": "Whether the substrate trusts some inputs more than others (relative trust, the v5 mechanism). Near 1.0 = it treats everything the same; above 1 = it has real preferences. A state readout, not a score.",
   "Substrate vitality|PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)": "The same substrate vitals, but shown for each block (block = one layer-like unit) as colored rows over time — so a single struggling block stands out even when the average looks fine.",
   "Representation|VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE": "Anti-collapse vitals. std = how varied the model's internal descriptions are (all-identical outputs would be collapse); triv_cos = how close the predictor is to just copying its input (1.0 = copying, the trivial cheat). Levels matter more than direction here.",
-  "Representation|DIMENSION · RANK (deep cadence — sparse)": "How many independent dimensions of description the model actually uses (effective rank = the working size of its vocabulary of ideas). A sustained drop means its representation is thinning out. Measured rarely — sparse dots.",
+  "Representation|DIMENSION · RANK (deep cadence — sparse)": "How many independent dimensions of description the model actually uses (effective rank = the working size of its vocabulary of ideas). A sustained drop means its representation is thinning out. Measured rarely — sparse dots. Read the ABSOLUTE values, not the percent: the percent is anchored to this run's first deep firing, which is the init state in every run and not a health reading. The dashed floor at rank 1 is one direction — degenerate at any width. A shaded band appears only if you designate reference runs (select them in the streams list, then ◫); it is recomputed from those runs' own logs, step-matched, and never stored.",
   "Throughput|TOKENS CONSUMED": "Total amount of data seen so far, in tokens (token = one small chunk of text/audio/image the model reads at a time). A straight-line odometer.",
   "Throughput|ELAPSED (hours)": "Wall-clock time since the run started. Pure bookkeeping.",
   "Throughput|STEP TIME (when emitted)": "How long each training step takes. Creeping upward can mean a leak or thermal throttling; spikes mean stalls (often disk or data loading).",
@@ -343,30 +343,248 @@ function g(v){
 }
 function gint(v){ return v==null?"--":(Number.isInteger(v)?String(v):String(+v.toPrecision(6))); }
 
-function seriesStats(ys){
-  const v = ys.filter((y) => y != null && isFinite(y));
+// A two-point percent cannot see a V. On 2026-08-06 a depth-8 run that fell
+// from eff_rank 215.8 to 4.3 and climbed back to 180.9 read as "-16.2%" —
+// arithmetically exact, and the collapse it lived through was invisible in the
+// headline. So the stats now carry WHERE the path went, not just where it
+// started and stopped, and every consumer of `dpct` has to say what it anchored
+// to.
+function seriesStats(ys, xs){
+  const v = [], vx = [];
+  for (let i = 0; i < ys.length; i++) {
+    const y = ys[i];
+    if (y != null && isFinite(y)) { v.push(y); vx.push(xs ? xs[i] : i); }
+  }
   if (!v.length) return null;
-  let min = v[0], max = v[0], sum = 0;
-  for (const y of v) { if (y < min) min = y; if (y > max) max = y; sum += y; }
+  let min = v[0], max = v[0], minAt = vx[0], maxAt = vx[0], sum = 0;
+  for (let i = 0; i < v.length; i++) {
+    const y = v[i];
+    if (y < min) { min = y; minAt = vx[i]; }
+    if (y > max) { max = y; maxAt = vx[i]; }
+    sum += y;
+  }
   const mean = sum / v.length;
   let varr = 0; for (const y of v) varr += (y - mean) ** 2;
   const start = v[0], end = v[v.length - 1];
+  const startAt = vx[0], endAt = vx[vx.length - 1];
   // A delta needs two samples: with one point start===end and the badge
   // would claim "+0.0%" about a trend that doesn't exist yet (the seed45
   // single-heldout-record confusion, 2026-07-19).
   const dpct = v.length >= 2 && start !== 0 ? ((end - start) / Math.abs(start)) * 100 : null;
-  return { start, end, min, max, range: max - min, std: Math.sqrt(varr / v.length), dpct, n: v.length };
+  // How much of the journey happens OUTSIDE the start->end envelope, as a
+  // fraction of the full range. ~0 = the endpoints tell the story; ->1 = the
+  // endpoints hide it. The 08-06 warmup run scores 0.84.
+  const lo = Math.min(start, end), hi = Math.max(start, end);
+  const outside = Math.max(lo - min, max - hi, 0);
+  const excursion = (max - min) > 0 ? outside / (max - min) : 0;
+  // Which extremum the endpoints are hiding, so the readout can show the path.
+  const detour = excursion > 0
+    ? ((lo - min) >= (max - hi) ? { v: min, at: minAt } : { v: max, at: maxAt })
+    : null;
+  return { start, end, startAt, endAt, min, max, minAt, maxAt, range: max - min,
+           std: Math.sqrt(varr / v.length), dpct, n: v.length, excursion, detour };
 }
 
+// Above this, the start->end delta is not a description of the series and the
+// readout shows the path instead.
+const EXCURSION_MIN = 0.2;
+
 // polarity-aware health/momentum: blue(opt) green(good) yellow(warn) orange(near) red(bad)
-function momentumClass(st, good){
-  if (!st || st.dpct == null || good == null) return "neutral";
+//
+// `refs` are the reference lines in force for this series (see REF machinery
+// below). Two things now outrank the percent, because both are true about the
+// data rather than about a pair of endpoints:
+//   1. sitting on a definitional floor (rank 1 = one direction) is collapse,
+//      whatever the trend says;
+//   2. a large excursion means the endpoints hid something, so the series is
+//      never reported as quietly healthy on endpoint evidence alone.
+function momentumClass(st, good, refs){
+  if (!st) return "neutral";
+  for (const r of (refs || [])) {
+    if (r.kind === "floor" && st.end <= r.value * (r.tol || 1.05)) return "bad";
+    if (r.kind === "ceiling" && st.end >= r.value * (r.tol || 0.95)) return "bad";
+    if (r.kind === "limit" && st.end > r.value) return "bad";
+  }
+  // The path left the endpoints' envelope: something happened. Flag it as worth
+  // a look even when the run came back — recovery is a finding, not a reason to
+  // go quiet.
+  if (st.excursion >= EXCURSION_MIN) return "near";
+  if (st.dpct == null || good == null) return "neutral";
   const improving = good === "up" ? st.end > st.start : st.end < st.start;
   const m = Math.abs(st.dpct);
   if (improving) return m >= 10 ? "opt" : "good";
   if (m < 5) return "warn";
   if (m < 15) return "near";
   return "bad";
+}
+
+// ---- reference lines ----
+//
+// Three sources, kept separate because they carry different authority, and the
+// panel says which one it is drawing. The rule that decides membership: a line
+// belongs here only if it is true independently of THIS model family. We will
+// not be running 512d/4x/d4/v5 forever — anything measured off that family
+// would go stale silently, which is the failure this whole correction is about.
+//
+// 1. ABSOLUTE_REFS — properties of the metric's definition. Arithmetic or a
+//    published target. These never go stale.
+// 2. run-declared — read from the run's own run_config.json at load time, and
+//    ONLY the ones the guard compares against directly. The baselined ones are
+//    withheld with a reason (see discovery.run_thresholds).
+// 3. peer band — computed live from runs you designate. Never stored, so it
+//    cannot go stale; when the family changes you designate the new family.
+//
+// `kind`: "floor"/"ceiling" = crossing it is degenerate; "limit" = a declared
+// kill line; "target" = a level to aim at, no health claim on its own.
+const ABSOLUTE_REFS = {
+  // nmse = l_pred / target_var (luthi/v2/eval_heldout.py). 1.0 is exactly the
+  // error of predicting the target's mean, so below 1 the model beats a
+  // constant and at/above 1 it does not. True for any width, depth or version.
+  heldout_nmse: [{ value: 1.0, kind: "limit", label: "NMSE 1.0",
+                   note: "parity with predicting the mean", source: "arithmetic" }],
+  // effective/stable rank are bounded below by 1 by construction: rank 1 is one
+  // direction. Collapse is a fact about the quantity, not about the family.
+  eff_rank:    [{ value: 1.0, kind: "floor", label: "rank 1",
+                  note: "one direction — degenerate", source: "definition" }],
+  stable_rank: [{ value: 1.0, kind: "floor", label: "rank 1",
+                  note: "one direction — degenerate", source: "definition" }],
+  // VICReg's variance hinge requires per-dim std to exceed 1.0. That is the
+  // published target the project's own collapse/warning bands are struck from
+  // (m8-brief-v0.5 §155); the 0.1 and 0.5 bands are OUR fractions of it, so the
+  // target is drawn and the fractions are not.
+  std_p5: [{ value: 1.0, kind: "target", label: "VICReg variance target",
+             note: "per-dim std hinged above 1.0", source: "arXiv:2105.04906" }],
+  // cosine is bounded [-1,1]; 1.0 is the predictor having learned to copy.
+  triv_cos: [{ value: 1.0, kind: "ceiling", label: "cosine 1.0",
+               note: "trivial copy", source: "definition" }],
+};
+
+// Deep-cadence rank is init-proximal for its first firings: measured at ~2.4-2.6
+// stable_rank at step 100 at both full and 1/10th LR, i.e. it is the init state
+// and not a health reading. Anchoring a percent to it under-reports collapse
+// when the start is already broken AND under-reports recovery when the run dips
+// and returns. We cannot stop it being the first sample, so we label it.
+const INIT_PROXIMAL_FIRINGS = { eff_rank: 3, stable_rank: 3 };
+
+// Lines the current run declares, keyed by series label (filled from /runmeta).
+let runRefs = {};
+let runWithheld = {};
+
+// Metrics whose interpretation is VOID while the representation is degenerate.
+// These do not fail by going quiet — they fail by producing confident numbers
+// that point the wrong way, which is why they get an explicit annotation
+// instead of being left to the reader to discount.
+const RANK_DEPENDENT = {
+  err_acc: "it rises because l_pred is thrashing on a degenerate target — elevated BY the failure",
+  pred_frob: "predictive structure measured against a collapsed target",
+  heldout_nmse: "nmse = l_pred / target_var, and target_var collapses with the representation",
+};
+// At most two effective directions. Stated against the definitional floor (rank
+// 1) rather than a measured collapse value, so it stays true at any width: no
+// model of interest is doing its job inside a 2-dimensional subspace.
+const RANK_FLOOR_AT = 2.0;
+let rankFloored = false;
+
+function computeRankFloored(recs) {
+  let last = null;
+  for (const r of recs) {
+    const sr = num(r.deep?.stable_rank);
+    if (sr != null) last = sr;
+  }
+  return last != null && last <= RANK_FLOOR_AT;
+}
+
+function refsFor(label) {
+  return (ABSOLUTE_REFS[label] || []).concat(runRefs[label] || []);
+}
+
+// ---- peer reference band: opt-in, computed live, never stored ----
+//
+// "Is 181 a healthy effective rank?" needs a comparison, and every number that
+// could answer it is a fact about ONE model family. Baking 263-372 into this
+// file would be true for 512d/4x/d4/v5 and quietly false the day we move — and
+// we have already moved. So the band is not a constant and not a stored
+// measurement: it is whatever runs you designate, recomputed from their tapes
+// on every load. Designate nothing and there is no band and no health claim
+// beyond the definitional floors. Change architecture and you designate the new
+// family's healthy runs; there is nothing to re-measure and nothing in code to
+// go stale.
+const REFRUNS_KEY = "luthiscope.referenceRuns";
+let refRuns = [];
+try { refRuns = JSON.parse(localStorage.getItem(REFRUNS_KEY) || "[]"); } catch (e) { refRuns = []; }
+function saveRefRuns() { try { localStorage.setItem(REFRUNS_KEY, JSON.stringify(refRuns)); } catch (e) {} }
+
+// Only quantities whose LEVEL is family-dependent earn a band. A definitional
+// floor needs no peers, and a raw loss has no cross-run meaning to band at all.
+const BANDABLE = ["eff_rank", "stable_rank"];
+const BAND_GET = {
+  eff_rank: (r) => num(r.deep?.effective_rank),
+  stable_rank: (r) => num(r.deep?.stable_rank),
+};
+// Reference runs may log at a different cadence than the run being read (the d4
+// family fires deep every 1000; the d8 probes every 100), so a contributor is
+// sampled at the nearest firing within this many steps of a grid point.
+const BAND_TOL = 600;
+let refBands = {};      // label -> {xs, lo, hi, n, endsAt, gridEnd}
+let refBandRuns = [];   // ids actually contributing
+
+async function loadRefBands() {
+  refBands = {}; refBandRuns = [];
+  if (!refRuns.length) return;
+  const runs = [];
+  for (const id of refRuns) {
+    try {
+      const resp = await (await fetch(`/api/streams/${encodeURI(id)}/records`)).json();
+      if (resp.records && resp.records.length) runs.push({ id, records: resp.records });
+    } catch (e) { /* a designated run that has vanished stops contributing, silently to the fetch but visibly in the count shown on the panel */ }
+  }
+  if (!runs.length) return;
+  refBandRuns = runs.map((r) => r.id);
+  for (const label of BANDABLE) {
+    const get = BAND_GET[label];
+    const contributing = runs
+      .map((r) => r.records.map((rec) => [num(rec.step), get(rec)])
+                           .filter((p) => p[0] != null && p[1] != null))
+      .filter((p) => p.length);
+    if (!contributing.length) continue;
+    // Grid = the union of every contributor's steps, so no run's cadence is
+    // privileged and a denser reference is not silently downsampled.
+    const grid = [...new Set(contributing.flatMap((p) => p.map((q) => q[0])))].sort((a, b) => a - b);
+    const xs = [], lo = [], hi = [];
+    for (const x of grid) {
+      const vals = contributing.map((p) => nearestVal(p, x, BAND_TOL)).filter((v) => v != null);
+      // Band only where EVERY contributor has a sample. Past the shortest run
+      // the band would quietly narrow to whoever is left, which reads as the
+      // family agreeing more, not as fewer runs reporting.
+      if (vals.length < contributing.length) continue;
+      xs.push(x); lo.push(Math.min(...vals)); hi.push(Math.max(...vals));
+    }
+    if (xs.length) {
+      refBands[label] = { xs, lo, hi, n: contributing.length,
+                          endsAt: xs[xs.length - 1], gridEnd: grid[grid.length - 1] };
+    }
+  }
+}
+
+// Where this run's final value sits against the band, at the step it actually
+// reached — not against a band pooled over a whole training run. Comparing a
+// step-3000 value to a 72k-step envelope is its own framing error.
+function bandVerdict(label, st) {
+  const b = refBands[label];
+  if (!b || st.endAt == null) return "";
+  let bi = -1, bd = Infinity;
+  for (let i = 0; i < b.xs.length; i++) {
+    const d = Math.abs(b.xs[i] - st.endAt);
+    if (d < bd) { bd = d; bi = i; }
+  }
+  if (bi < 0 || bd > BAND_TOL) return `no band at step ${gint(st.endAt)}`;
+  const lo = b.lo[bi], hi = b.hi[bi], at = gint(b.xs[bi]);
+  if (st.end < lo) {
+    const ratio = st.end > 0 ? lo / st.end : null;
+    return `${ratio ? `${ratio.toFixed(1)}× ` : ""}below band ${g(lo)}–${g(hi)} @${at}`;
+  }
+  if (st.end > hi) return `above band ${g(lo)}–${g(hi)} @${at}`;
+  return `in band ${g(lo)}–${g(hi)} @${at}`;
 }
 
 // ---- app state ----
@@ -720,6 +938,98 @@ function eventMarkersPlugin(spec) {
   };
 }
 
+// Draws the reference layer: the peer band behind the series, the definitional
+// and run-declared lines over it. Every line is labeled on the plot — a line
+// whose meaning lives in someone's memory is the thing we are correcting.
+function referencePlugin(spec) {
+  const labels = spec.series.filter((s) => !s.cmp).map((s) => s.label);
+  const uniq = [...new Set(labels)];
+  return {
+    hooks: {
+      // behind the data
+      drawClear: (u) => {
+        const ctx = u.ctx;
+        for (const label of uniq) {
+          const b = refBands[label];
+          if (!b) continue;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+          ctx.clip();
+          ctx.beginPath();
+          for (let i = 0; i < b.xs.length; i++) {
+            const x = u.valToPos(b.xs[i], "x", true), y = u.valToPos(b.hi[i], "y", true);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          for (let i = b.xs.length - 1; i >= 0; i--) {
+            ctx.lineTo(u.valToPos(b.xs[i], "x", true), u.valToPos(b.lo[i], "y", true));
+          }
+          ctx.closePath();
+          ctx.fillStyle = "rgba(34,197,94,0.10)";
+          ctx.fill();
+          ctx.restore();
+        }
+      },
+      // over the data
+      draw: (u) => {
+        const ctx = u.ctx;
+        const seen = new Set();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+        ctx.clip();
+        ctx.font = "10px monospace";
+        ctx.textBaseline = "bottom";
+        for (const label of uniq) {
+          for (const r of refsFor(label)) {
+            const key = `${r.value}|${r.label}`;
+            if (seen.has(key)) continue;    // one line per value, not one per series
+            seen.add(key);
+            if (r.value < u.scales.y.min || r.value > u.scales.y.max) continue;
+            const y = u.valToPos(r.value, "y", true);
+            ctx.strokeStyle = r.kind === "target"
+              ? "rgba(148,163,184,0.55)" : "rgba(248,113,113,0.55)";
+            ctx.setLineDash(r.kind === "target" ? [2, 4] : [6, 3]);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(u.bbox.left, y);
+            ctx.lineTo(u.bbox.left + u.bbox.width, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "#8492a8";
+            const txt = r.label;
+            ctx.fillText(txt, u.bbox.left + u.bbox.width - ctx.measureText(txt).width - 4, y - 2);
+          }
+        }
+        ctx.restore();
+      },
+    },
+  };
+}
+
+// A band or a declared limit is useless off-screen: if the healthy family sits
+// at 300 and this run sits at 4, the y-range must contain both or "7x below"
+// stays a number in the readout instead of a picture. Definitional FLOORS are
+// deliberately not forced into range — a floor at rank 1 would squash a healthy
+// 260-370 view for no gain, and it draws itself whenever it is relevant.
+function refAwareRange(spec) {
+  return (u, dataMin, dataMax) => {
+    if (dataMin == null || dataMax == null) return uPlot.rangeNum(dataMin, dataMax, 0.1, true);
+    let lo = dataMin, hi = dataMax;
+    for (const s of spec.series) {
+      if (s.cmp) continue;
+      const b = refBands[s.label];
+      if (b) { lo = Math.min(lo, ...b.lo); hi = Math.max(hi, ...b.hi); }
+      for (const r of refsFor(s.label)) {
+        if (r.kind === "limit" || r.kind === "target") {
+          lo = Math.min(lo, r.value); hi = Math.max(hi, r.value);
+        }
+      }
+    }
+    return uPlot.rangeNum(lo, hi, 0.1, true);
+  };
+}
+
 function makeChart(mountEl, spec, xlabel, widthPx) {
   const series = [{}].concat(
     spec.series.map((s) => (s.cmp ? {
@@ -744,7 +1054,7 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
   const opts = {
     width: widthPx,
     height: 200,
-    scales: { x: { time: false } },
+    scales: { x: { time: false }, y: { range: refAwareRange(spec) } },
     axes: [Object.assign(axisStyle(), { label: xlabel }), axisStyle()],
     series,
     legend: { show: false },
@@ -759,7 +1069,8 @@ function makeChart(mountEl, spec, xlabel, widthPx) {
         },
       },
     },
-    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin(), eventMarkersPlugin(spec)],
+    plugins: [tooltipPlugin(xlabel), wheelZoomPlugin(), dragPanPlugin(),
+              referencePlugin(spec), eventMarkersPlugin(spec)],
   };
   return new uPlot(opts, [[]].concat(spec.series.map(() => [])), mountEl);
 }
@@ -1079,6 +1390,7 @@ function refreshData() {
   const cfg = GROUPS[current.kind];
   const pts = records.filter((r) => cfg.x(r) != null);
   const xs = pts.map(cfg.x);
+  rankFloored = current.kind === "training" && computeRankFloored(records);
   // Event-locked view centres on EXPOSURES when a canary is declared (the
   // "what does the mind do when X arrives?" question, answerable even when
   // nothing remarkable happens), else on the derived events.
@@ -1125,9 +1437,9 @@ function refreshData() {
       });
       c.u.setData([xs].concat(seriesData));
     }
-    renderReadout(c.readoutEl, c.spec, seriesData);
+    renderReadout(c.readoutEl, c.spec, seriesData, locked ? relXs : xs);
   }
-  updateOverview();
+  updateOverview(xs);
 }
 
 // Event navigation for the locked view (Brian, 2026-07-26): step through
@@ -1172,44 +1484,82 @@ function renderEvlockBar(evList, locked) {
   });
 }
 
-function renderReadout(el, spec, seriesData) {
+function renderReadout(el, spec, seriesData, xs) {
   let html = "";
   spec.series.forEach((s, i) => {
     if (s.cmp) return;   // shadow series: visible on the chart, not in the readout
-    const st = seriesStats(seriesData[i]);
+    const st = seriesStats(seriesData[i], xs);
     if (!st) {
       html += `<div class="ro-row"><span class="ro-dot" style="background:${s.color}"></span>` +
               `<span class="ro-label">${s.label}</span><span class="ro-prog">no data</span>` +
               `<span></span><span></span></div>`;
       return;
     }
+    const refs = refsFor(s.label);
     const arrow = st.end > st.start ? "▲" : (st.end < st.start ? "▼" : "–");
-    const cls = momentumClass(st, s.good);
+    const cls = momentumClass(st, s.good, refs);
+    // The percent must say what it is anchored to, in place — and when the
+    // anchor is a run's first deep firing, it must say that the anchor is the
+    // init state rather than a healthy reading.
+    const initN = INIT_PROXIMAL_FIRINGS[s.label];
+    const anchored = initN && st.n > initN ? "vs first firing · init-proximal" : "vs first";
     const dtxt = st.dpct == null ? arrow
       : `${arrow} ${st.dpct >= 0 ? "+" : ""}${st.dpct.toFixed(1)}%`;
+    // Show the path when the endpoints hide it, so a V cannot read as a drift.
+    const prog = st.excursion >= EXCURSION_MIN && st.detour
+      ? `<b>${g(st.start)}</b> → <b class="ro-detour">${g(st.detour.v)}</b>` +
+        `<span class="ro-at">@${gint(st.detour.at)}</span> → <b>${g(st.end)}</b>`
+      : `<b>${g(st.start)}</b> → <b>${g(st.end)}</b>`;
+    const band = bandVerdict(s.label, st, xs);
     html +=
       `<div class="ro-row">` +
         `<span class="ro-dot" style="background:${s.color}"></span>` +
         `<span class="ro-label">${s.label}</span>` +
-        `<span class="ro-prog"><b>${g(st.start)}</b> → <b>${g(st.end)}</b></span>` +
-        `<span class="ro-delta ${cls}">${dtxt}</span>` +
-        `<span class="ro-spread">min ${g(st.min)} · max ${g(st.max)} · σ ${g(st.std)} · rng ${g(st.range)}</span>` +
+        `<span class="ro-prog">${prog}</span>` +
+        `<span class="ro-delta ${cls}" title="${anchored}">${dtxt}` +
+          `<span class="ro-anchor">${anchored}</span></span>` +
+        `<span class="ro-spread">min ${g(st.min)}<span class="ro-at">@${gint(st.minAt)}</span>` +
+          ` · max ${g(st.max)}<span class="ro-at">@${gint(st.maxAt)}</span>` +
+          ` · σ ${g(st.std)}${band ? ` · <span class="ro-band">${band}</span>` : ""}</span>` +
       `</div>`;
   });
+  // Say what the band is, in place. A shaded region whose provenance lives in a
+  // settings dialog is a claim the reader has to take on trust.
+  const banded = spec.series.filter((s) => !s.cmp && refBands[s.label]);
+  if (banded.length) {
+    const b = refBands[banded[0].label];
+    const names = refBandRuns.map((id) => id.split("/")[0]).join(", ");
+    const short = names.length > 64 ? `${refBandRuns.length} designated runs` : names;
+    const truncated = b.endsAt < b.gridEnd
+      ? ` · band ends @${gint(b.endsAt)} (shortest reference run)` : "";
+    html += `<div class="ro-note">band: ${b.n} reference run(s) · ${short} · ` +
+            `step-matched, recomputed from their logs${truncated}</div>`;
+  }
+  // Metrics that are not interpretable while the representation is degenerate
+  // say so, rather than being read as vitals (your §4: err_acc elevated BY the
+  // failure it is supposed to be reporting).
+  if (rankFloored) {
+    for (const s of spec.series) {
+      const why = !s.cmp && RANK_DEPENDENT[s.label];
+      if (why) html += `<div class="ro-note warnnote">rank on the floor — ` +
+                       `${s.label} is not meaningful here: ${why}</div>`;
+    }
+  }
   el.innerHTML = html;
 }
 
 const HEALTH_ORDER = { neutral: 0, opt: 1, good: 1, warn: 2, near: 3, bad: 4 };
 
 // recompute the per-group health tiles, group dots, and "needs attention" bar
-function updateOverview() {
+function updateOverview(xs) {
   const flagged = [];
+  const allX = xs || records.map((r) => num(r.step));
   for (const title in groupSeries) {
     let worst = "neutral", worstRank = 0, headline = null, headlineSet = false;
     for (const s of groupSeries[title]) {
-      const st = seriesStats(records.map(s.get));
+      const st = seriesStats(records.map(s.get), allX);
       if (!headlineSet && st) { headline = st.end; headlineSet = true; }
-      const cls = momentumClass(st, s.good);
+      const cls = momentumClass(st, s.good, refsFor(s.label));
       if (HEALTH_ORDER[cls] > worstRank) { worstRank = HEALTH_ORDER[cls]; worst = cls; }
       if (cls === "warn" || cls === "near" || cls === "bad") flagged.push({ group: title, label: s.label, cls, st });
     }
@@ -1229,8 +1579,20 @@ function renderAttention(flagged) {
   const rank = { warn: 1, near: 2, bad: 3 };
   flagged.sort((a, b) => rank[b.cls] - rank[a.cls]);
   el.innerHTML = `<span class="att-head">⚠ NEEDS ATTENTION</span>` +
-    flagged.map((f) => `<span class="att-item ${f.cls}">${f.group} · ${f.label}` +
-      (f.st && f.st.dpct != null ? ` ${f.st.dpct >= 0 ? "+" : ""}${f.st.dpct.toFixed(1)}%` : "") + `</span>`).join("");
+    flagged.map((f) => {
+      const st = f.st;
+      // Report the excursion when the endpoints hide it. "eff_rank -16.2%" was
+      // a true sentence about a run that had been to 4.3 and back; "fell to 4.3
+      // @500, now 181" is the same run described.
+      let detail = "";
+      if (st && st.excursion >= EXCURSION_MIN && st.detour) {
+        const dir = st.detour.v < Math.min(st.start, st.end) ? "fell to" : "rose to";
+        detail = ` ${dir} ${g(st.detour.v)} @${gint(st.detour.at)}, now ${g(st.end)}`;
+      } else if (st && st.dpct != null) {
+        detail = ` ${st.dpct >= 0 ? "+" : ""}${st.dpct.toFixed(1)}% vs first`;
+      }
+      return `<span class="att-item ${f.cls}">${f.group} · ${f.label}${detail}</span>`;
+    }).join("");
 }
 
 // Dismissed streams are hidden (not deleted — streams are discovered from disk) and
@@ -1252,9 +1614,34 @@ let allStreams = [];
 let selectedIds = new Set();
 function updateClearSelected() {
   const btn = $("clear-selected");
-  if (!btn) return;
-  btn.disabled = selectedIds.size === 0;
-  btn.title = selectedIds.size ? `Hide ${selectedIds.size} selected stream(s)` : "Hide selected streams";
+  if (btn) {
+    btn.disabled = selectedIds.size === 0;
+    btn.title = selectedIds.size ? `Hide ${selectedIds.size} selected stream(s)` : "Hide selected streams";
+  }
+  const ref = $("ref-selected");
+  if (ref) {
+    ref.disabled = selectedIds.size === 0;
+    ref.classList.toggle("on", refRuns.length > 0);
+    ref.title = selectedIds.size
+      ? `Use ${selectedIds.size} selected stream(s) as the healthy reference band`
+      : (refRuns.length
+          ? `Reference band: ${refRuns.length} run(s). Select streams to change it.`
+          : "Select healthy runs, then designate them as the reference band");
+  }
+}
+
+// Compact "how long since this run last wrote". The list is ordered by this,
+// newest first — alphabetical order reads as recency and isn't (by ASCII,
+// `..._warmup15_...` sorts before `..._warmup_...`, so on 2026-08-06 the newest
+// run sat above an older one and the last row was not the last run).
+function ago(mtime) {
+  if (!mtime) return "no timestamp";
+  const secs = Date.now() / 1000 - mtime;
+  if (secs < 0) return "just now";
+  if (secs < 90) return `${Math.round(secs)}s ago`;
+  if (secs < 5400) return `${Math.round(secs / 60)}m ago`;
+  if (secs < 172800) return `${Math.round(secs / 3600)}h ago`;
+  return `${Math.round(secs / 86400)}d ago`;
 }
 
 async function loadStreams() {
@@ -1307,9 +1694,12 @@ function renderStreamList() {
     const main = document.createElement("div");
     main.className = "s-main";
     const liveDot = s.live ? `<span class="live-dot" title="actively logging">●</span>` : "";
+    const isRef = refRuns.includes(s.id);
     main.innerHTML =
-      `<div class="s-name">${liveDot}${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span></div>` +
-      `<div class="s-meta">${s.n_records} records</div>`;
+      `<div class="s-name">${liveDot}${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span>` +
+        (isRef ? `<span class="ref-tag" title="Designated reference run: contributes to the healthy band">ref</span>` : "") +
+      `</div>` +
+      `<div class="s-meta">${s.n_records} records · ${ago(s.mtime)}</div>`;
     main.onclick = () => selectStream(s.id, s.kind, li);
     const cmpBtn = document.createElement("button");
     cmpBtn.className = "s-cmpbtn" + (compare && compare.id === s.id ? " on" : "");
@@ -1369,6 +1759,65 @@ function renderHidden(hiddenStreams) {
   };
 }
 
+// Short plot labels for the lines a run declares. Kept explicit rather than
+// derived from the key, so a new declared threshold has to be named by a person
+// before it can appear on a chart claiming authority.
+const DECLARED_LABEL = {
+  cosine_collapse_threshold: (v) => `kill · cosine ${g(v)}`,
+  divergence_nmse_max: (v) => `kill · nmse ${g(v)}`,
+};
+
+function applyRunMeta(meta) {
+  runRefs = {}; runWithheld = {};
+  if (!meta || !meta.thresholds) return;
+  const lines = meta.thresholds.lines || {};
+  for (const key in lines) {
+    const spec = lines[key];
+    if (!spec || !spec.series || typeof spec.value !== "number") continue;
+    const mk = DECLARED_LABEL[key];
+    if (!mk) continue;
+    (runRefs[spec.series] = runRefs[spec.series] || []).push({
+      value: spec.value,
+      kind: key === "cosine_collapse_threshold" ? "ceiling" : "limit",
+      label: mk(spec.value),
+      note: spec.note,
+      source: "declared by this run",
+    });
+  }
+  runWithheld = meta.thresholds.withheld || {};
+}
+
+// The run's own account of itself, in the header. Record count and step range
+// are different facts and both are stated, because the day they stopped agreeing
+// nothing said so: a cadence change from 1000 to 100 turned 31 records into
+// 3000 steps and the reader, correctly applying the spacing that had held for
+// every run before it, read 31k.
+function renderRunFacts(meta) {
+  if (!meta) return "";
+  const a = meta.axis || {}, c = meta.cadence || {};
+  const bits = [];
+  if (a.first != null && a.last != null) {
+    bits.push(`${a.axis}s ${gint(a.first)}–${gint(a.last)}`);
+  }
+  if (a.n_records != null) {
+    const missing = a.n_records - (a.n_with_axis || 0);
+    bits.push(`${a.n_records} records` +
+              (missing > 0 ? ` <span class="nl-warn">(${missing} without a ${a.axis})</span>` : ""));
+  }
+  if (c.deep_interval_batches) bits.push(`deep every ${c.deep_interval_batches}`);
+  if (c.light_interval_batches) bits.push(`light every ${c.light_interval_batches}`);
+  if (!c.deep_interval_batches && !c.light_interval_batches) {
+    bits.push(`<span class="nl-warn">cadence not declared</span>`);
+  }
+  const withheldKeys = Object.keys(runWithheld);
+  if (withheldKeys.length) {
+    const why = withheldKeys.map((k) => `${k}: ${runWithheld[k]}`).join("\n");
+    bits.push(`<span class="nl-withheld" title="${why.replace(/"/g, "&quot;")}">` +
+              `${withheldKeys.length} declared threshold(s) not drawn</span>`);
+  }
+  return bits.length ? ` · ${bits.join(" · ")}` : "";
+}
+
 async function selectStream(id, kind, li) {
   document.querySelectorAll("#stream-list li").forEach((el) => el.classList.remove("active"));
   if (li) li.classList.add("active");
@@ -1382,12 +1831,19 @@ async function selectStream(id, kind, li) {
     const ev = await (await fetch(`/api/streams/${id}/events`)).json();
     streamEvents = ev.events || [];
   } catch (e) { streamEvents = []; }
+  // What this run says about itself: cadence, true axis range, and the lines it
+  // declares. Loaded BEFORE the panels are built so the reference layer exists
+  // on first paint rather than appearing a beat later.
+  let meta = null;
+  try { meta = await (await fetch(`/api/streams/${encodeURI(id)}/runmeta`)).json(); } catch (e) { meta = null; }
+  applyRunMeta(meta);
+  await loadRefBands();
   derivedEvents = deriveEvents(records, streamEvents.filter((e) => e.kind === "canary"));
   evlockIndex = null;
   if (ledgerMode) { loadLedger(); }
   buildPanels(kind);
   refreshData();
-  $("now-line").innerHTML = `<b>${id}</b> · ${records.length} records · ${kind}`;
+  $("now-line").innerHTML = `<b>${id}</b> · ${kind}${renderRunFacts(meta)}`;
   setConn("online", "LOADED");
   openLive(id);
 }
@@ -1897,6 +2353,23 @@ const clearAllBtn = $("clear-all");
 if (clearAllBtn) clearAllBtn.onclick = () => {
   for (const s of allStreams) if (!hiddenIds.has(s.id)) hiddenIds.add(s.id);
   saveHidden(); renderStreamList();
+};
+// Designate the checked streams as the healthy reference band, or clear it if
+// they are already the reference. Nothing is measured or stored — the band is
+// recomputed from these runs' own logs every time a stream is opened, so it
+// cannot go stale, and moving to a new architecture is a matter of designating
+// that architecture's healthy runs.
+const refSelBtn = $("ref-selected");
+if (refSelBtn) refSelBtn.onclick = async () => {
+  if (!selectedIds.size) return;
+  const picked = [...selectedIds].filter((id) => id.endsWith("/training"));
+  const same = picked.length === refRuns.length && picked.every((id) => refRuns.includes(id));
+  refRuns = same ? [] : picked;
+  saveRefRuns();
+  selectedIds.clear();
+  await loadRefBands();
+  renderStreamList();
+  if (current) { buildPanels(current.kind); refreshData(); }
 };
 const sBtn = $("settings-btn");
 if (sBtn) sBtn.onclick = () => {

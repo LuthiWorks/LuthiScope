@@ -239,6 +239,22 @@ html, body {
 #clear-selected:disabled { opacity: 0.35; cursor: default; }
 #clear-selected:not(:disabled):hover { color: var(--c-bad); border-color: var(--c-bad); }
 #sidebar.collapsed #clear-selected { display: none; }
+/* designate-as-reference square, below the hide square */
+#ref-selected {
+  position: absolute; top: 68px; right: 8px; width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--glass); border: 1px solid var(--edge); border-radius: 6px;
+  color: var(--ink-faint); cursor: pointer; font-size: 11px; line-height: 1;
+}
+#ref-selected:disabled { opacity: 0.35; cursor: default; }
+#ref-selected.on { color: var(--c-good); border-color: var(--c-good); }
+#ref-selected:not(:disabled):hover { color: var(--c-good); border-color: var(--c-good); }
+#sidebar.collapsed #ref-selected { display: none; }
+.ref-tag {
+  margin-left: 5px; padding: 0 5px; border-radius: 3px; font-size: 9px;
+  font-family: var(--mono); color: var(--c-good); border: 1px solid var(--c-good);
+  opacity: .8;
+}
 .s-check { width: 13px; height: 13px; flex: none; accent-color: var(--c-opt); cursor: pointer; }
 /* event-locked navigation bar */
 .evlock-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -269,6 +285,10 @@ html, body {
 #main { flex: 1; overflow-y: auto; padding: 16px 20px; }
 #now-line { color: var(--ink-dim); margin-bottom: 12px; font-family: var(--mono); font-size: 12px; }
 #now-line b { color: var(--ink); }
+/* a fact the run did not declare, or a gap in what it logged */
+.nl-warn { color: var(--c-near); }
+/* thresholds the run declares that cannot honestly be drawn as lines */
+.nl-withheld { color: var(--ink-faint); border-bottom: 1px dotted var(--ink-faint); cursor: help; }
 
 .statstrip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
 .stat {
@@ -366,13 +386,27 @@ html, body {
 /* progression readout */
 .panel-readout { margin-top: 8px; border-top: 1px solid var(--edge); padding-top: 7px; font-family: var(--mono); }
 .ro-row {
-  display: grid; grid-template-columns: 14px 88px minmax(120px, auto) 70px 1fr; gap: 8px;
+  display: grid; grid-template-columns: 14px 88px minmax(150px, auto) 104px 1fr; gap: 8px;
   align-items: baseline; font-size: 11px; padding: 2px 2px;
 }
 .ro-dot { width: 9px; height: 9px; border-radius: 50%; align-self: center; }
 .ro-label { color: var(--ink-soft); font-weight: 600; }
 .ro-prog { color: var(--ink-dim); }
 .ro-prog b { color: var(--ink); }
+/* the excursion the endpoints hide: the low (or high) the run actually reached */
+.ro-prog b.ro-detour { color: var(--c-near); }
+/* where an extremum happened — a value without its step is half a fact */
+.ro-at { color: var(--ink-faint); font-size: 9px; margin-left: 2px; }
+/* what the percent is anchored to, stated in place and never assumed */
+.ro-anchor { display: block; font-weight: 400; font-size: 9px; color: var(--ink-faint); }
+/* where this run sits against the designated reference band */
+.ro-band { color: var(--c-near); }
+/* provenance and interpretability notes under the rows */
+.ro-note {
+  font-size: 9.5px; color: var(--ink-faint); padding: 3px 2px 0 2px;
+  border-top: 1px dotted var(--edge); margin-top: 4px;
+}
+.ro-note.warnnote { color: var(--c-near); border-top: none; margin-top: 2px; }
 .ro-spread { color: var(--ink-faint); text-align: right; }
 .ro-delta { font-weight: 700; }
 .ro-delta.opt { color: var(--c-opt); }

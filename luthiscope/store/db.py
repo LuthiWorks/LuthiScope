@@ -203,3 +203,32 @@ class Store:
         table = "training_records" if kind == TRAINING else "cognition_records"
         cur = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE run_id=?", (run_id,))
         return int(cur.fetchone()[0])
+
+    def axis_range(self, run_id: str, kind: str) -> dict:
+        """First/last value of the run's x-axis column, and how many records carry
+        one. The pair (n_records, step range) is what stops a record count from
+        impersonating a step count — 31 records spanning steps 100–3000 is a
+        different run from 31 records spanning 1000–31000, and the display cannot
+        tell them apart without this.
+
+        Records with a NULL axis value are counted separately rather than folded
+        in: "31 records, 4 of them without a step" is a fact worth seeing, and
+        averaging it away is how a partial log reads as a complete one.
+        """
+        if kind == TRAINING:
+            table, col = "training_records", "step"
+        else:
+            table, col = "cognition_records", "cycle"
+        cur = self.conn.execute(
+            f"SELECT MIN({col}), MAX({col}), COUNT({col}), COUNT(*) "
+            f"FROM {table} WHERE run_id=?",
+            (run_id,),
+        )
+        lo, hi, n_axis, n_total = cur.fetchone()
+        return {
+            "axis": col,
+            "first": lo,
+            "last": hi,
+            "n_with_axis": int(n_axis),
+            "n_records": int(n_total),
+        }

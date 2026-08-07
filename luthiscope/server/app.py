@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from luthiscope.config import Settings, load_settings
 from luthiscope.ingest.tailer import JsonlFollower
-from luthiscope.server.discovery import discover_all
+from luthiscope.server.discovery import discover_all, run_cadence, run_thresholds
 from luthiscope.store.db import COGNITION, TRAINING, Store
 
 if getattr(sys, "frozen", False):  # running inside a PyInstaller bundle
@@ -141,9 +141,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "kind": s.kind,
                     "n_records": n,
                     "live": _is_live(s.path),
+                    # Recency, so the list can order and label by it. discover_all
+                    # already returns newest-first; the client preserves that order.
+                    "mtime": s.mtime or None,
                 }
             )
         return out
+
+    @app.get("/api/streams/{stream_id:path}/runmeta")
+    def get_runmeta(stream_id: str):
+        """What the run says about itself: logging cadence, true axis range, and
+        the reference lines it declares that can honestly be drawn.
+
+        This is the fix for a record count impersonating a step count. The reader
+        supplied the cadence from memory because the display never stated it, and
+        the cadence had changed 10x under him. Everything here is sourced from the
+        run's own files — run_config.json and the records — so a change in cadence
+        is visible the moment it happens."""
+        s = current_streams_map().get(stream_id)
+        if s is None:
+            raise HTTPException(status_code=404, detail=f"unknown stream: {stream_id}")
+        ensure_ingested(s)
+        with lock:
+            axis = store.axis_range(s.stream_id, s.kind)
+        run_dir = s.path.parent
+        return {
+            "id": s.stream_id,
+            "cadence": run_cadence(run_dir),
+            "axis": axis,
+            "thresholds": run_thresholds(run_dir),
+        }
 
     @app.get("/api/streams/{stream_id:path}/records")
     def get_records(stream_id: str):
