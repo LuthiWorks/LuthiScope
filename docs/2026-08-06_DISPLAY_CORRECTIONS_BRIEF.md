@@ -80,23 +80,25 @@ mtime, descending) and show a compact last-written timestamp per row.
 If alphabetical has value for finding families, a sort toggle is fine —
 but the DEFAULT should be the ordering a human at the bedside assumes.
 
-## §3. "Ended at approximately 31k steps" — UNREPRODUCED; do not fix blind
+## §3. "Ended at approximately 31k steps" — RESOLVED: not a widget, a cadence made invisible
 
-Brian reports the stage-31 run displaying "ended at ~31k steps." The
-tape says: 31 records, steps 100 → 3000, cadence 100, and I found no
-×1000 anywhere in `frontend/app.js` (x reads `r.step` directly, line ~18)
-or the Python. Suspicious coincidence: 31 records × 1000 (the historical
-default cadence) = 31,000 — but I could not find code that computes that.
+Closed by Brian directly: no widget showed 31k. He saw **31 records** and
+decoded them against the long-standing per-record step spacing — which was
+correct for every run he had ever watched, until the depth-8 probe arms
+dropped `deep_interval_batches` from 1000 to 100 on 2026-08-05 and nothing
+in the UI said so. A reader applying yesterday's true assumption to
+today's data is not misreading; the interface changed meaning under him
+silently.
 
-**Please reproduce with Brian at the UI before touching anything**: have
-him point at the exact widget (x-axis tick? tooltip? run-list
-annotation? something in the header?), then trace that one renderer. If
-hovering the final point shows step 3000, the defect is in a label
-formatter; if it shows 31000, something between the store and the panel
-is synthesizing steps and that is a worse bug than a label. Report what
-you find either way — if it turns out to be a misreading rather than a
-defect, that is also an answer (and §1/§2 explain how tonight's UI made
-misreadings easy).
+**Correction requested (replaces the reproduce-first ask):** make cadence
+and true step range first-class in the display — per run, in place. The
+minimal version: the run header (or list row) shows "steps 100–3000 ·
+deep every 100" read from `run_config.json`'s
+`logging.deep_interval_batches` and the records' own `step` field. Then a
+change in cadence is visible the moment it happens, and record count can
+never impersonate step count again. This is the same principle as §1:
+never let the reader supply a baseline or a unit from memory when the
+data carries it.
 
 ## Acceptance, all three
 
@@ -109,8 +111,9 @@ misreadings easy).
   tell me: two runs differing by a `15` suffix was my naming, and the arm
   names are in LuthiModel's driver — if you want a naming convention
   rule for future arms, propose it and I'll follow it.)
-- §3 has a reproduction, a diagnosis, or a documented "misread, and
-  here's the UI change that prevents it."
+- §3: any run's header/row states its true step range and deep cadence,
+  sourced from the run's own files — verified on one cadence-1000 run and
+  one cadence-100 run showing different, correct labels.
 
 The depth-8 record this all leans on is in LuthiModel on `main` —
 nothing in this brief requires touching that repo. Thank you for §4 of
