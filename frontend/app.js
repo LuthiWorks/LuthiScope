@@ -117,6 +117,8 @@ const GROUPS = {
         { title: "DIMENSION · RANK (deep cadence — sparse)", sparse: true, series: [
           { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
           { label: "stable_rank", color: C.purple, good: "up", get: (r) => num(r.deep?.stable_rank) },
+          { label: "soloist_share", color: C.red, good: "down", get: (r) => num(r.deep?.top_dir_share) },
+          { label: "chorus_rank", color: C.teal, good: "up", get: (r) => num(r.deep?.chorus_stable_rank) },
         ]},
       ]},
       { title: "Throughput", panels: [
@@ -261,6 +263,8 @@ const GROUPS = {
 const PANEL_DESCS = {
   "Learning|LOSS": "How wrong the model's predictions are right now (loss = the error score training tries to shrink). l_pred is the prediction part, l_sigreg is the anti-collapse penalty (a guard that stops the model from outputting the same thing for everything). Falling is good.",
   "Learning|HELDOUT EVAL (epoch boundaries)": "A test on material the model never trains on (heldout = kept out of training), run once per epoch (one full pass through the data). The honest measure of learning, as opposed to memorizing. Sparse dots, not a continuous line.",
+  "Dimension|SOLOIST SHARE (when emitted)": "How much of the representation's total variation is carried by its single loudest direction (the 'soloist'). Down is good: under ~3% matches healthy training; near 100% means one direction is the whole show. This is the number the variance-budget work taxes directly.",
+  "Dimension|CHORUS RANK (when emitted)": "The stable rank of everything EXCEPT the loudest direction -- the health of the supporting cast. Up is good. A rebuilding chorus under a stubborn soloist shows here while plain stable rank stays flat; watching both tells you whether a low stable rank means a dead space or one loud voice.",
   "Optimization|GRADIENT NORM (when emitted)": "The overall size of the correction signal each step (gradient = the direction and amount training wants to change each weight). Sudden spikes can mean instability; a slow settle is normal.",
   "Optimization|LEARNING RATE (when emitted)": "How big a step the optimizer takes on each update (learning rate = the step-size dial; schedules often warm it up, then decay it). A schedule readout, not a health signal.",
   "Optimization|PLASTICITY TAPER (when emitted)": "A schedule that gradually reduces how changeable the living weights are — a formative, highly plastic youth easing into a stable maturity. It is SUPPOSED to fall.",

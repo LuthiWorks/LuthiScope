@@ -37,6 +37,11 @@ class SubstrateMetrics(_Lenient):
 class DeepMetrics(_Lenient):
     effective_rank: Optional[float] = None
     stable_rank: Optional[float] = None
+    # 2026-08-08: stable_rank decomposed (LuthiModel runner emits both).
+    # top_dir_share = the soloist's variance fraction (down = good);
+    # chorus_stable_rank = stable rank with the soloist excluded (up = good).
+    top_dir_share: Optional[float] = None
+    chorus_stable_rank: Optional[float] = None
     sv_index_at_90pct: Optional[int] = None
     sv_index_at_99pct: Optional[int] = None
     log_sv_max: Optional[float] = None
