@@ -2249,6 +2249,25 @@ function destroyLedger() {
   ledgerCharts = [];
   $("ledger-panels").innerHTML = "";
 }
+// Ledger block names carry their index as TEXT ("blocks.10.living_ffn.precision"),
+// so a plain .sort() is ASCII order: blocks.10 and blocks.11 land between
+// blocks.1 and blocks.2, and every heatmap below is then titled with a block
+// number that isn't the block it is showing. Harmless at depth 4 or 8 — single
+// digits sort the same either way — and wrong the first time depth crosses 9.
+// Same defect as the run list sorting alphabetically and reading as recency
+// (2026-08-06), found while checking whether anything else ordered that way.
+// Fixed before it could fire rather than after.
+//
+// Non-numeric names fall back to string order rather than being dropped or
+// silently grouped: an unrecognized naming scheme should look odd, not vanish.
+function byBlockIndex(a, b) {
+  const ia = Number(String(a).split(".")[1]), ib = Number(String(b).split(".")[1]);
+  const okA = Number.isFinite(ia), okB = Number.isFinite(ib);
+  if (okA && okB && ia !== ib) return ia - ib;
+  if (okA !== okB) return okA ? -1 : 1;
+  return a < b ? -1 : (a > b ? 1 : 0);
+}
+
 async function loadLedger() {
   const host = $("ledger-panels");
   destroyLedger();
@@ -2259,7 +2278,7 @@ async function loadLedger() {
   catch (e) { host.innerHTML = `<div class="s-meta" style="padding:20px">ledger fetch failed</div>`; return; }
   host.innerHTML = "";
   const steps = data.steps || [], blocks = data.blocks || {};
-  const names = Object.keys(blocks).sort();
+  const names = Object.keys(blocks).sort(byBlockIndex);
   if (!steps.length || !names.length) {
     host.innerHTML = `<div class="s-meta" style="padding:20px">no harvested ledger snapshots for this run — ` +
       `the checkpoint harvester creates them (ledger_harvest_* next to the run dir)</div>`;
