@@ -70,7 +70,9 @@ html, body {
 
 /* settings panel */
 .settings {
-  position: fixed; top: 0; right: 0; height: 100%; width: 304px; z-index: 50;
+  /* 304px was too narrow for the metric list, whose right-hand column is a full
+     panel title; widened so titles wrap over two lines instead of many */
+  position: fixed; top: 0; right: 0; height: 100%; width: min(420px, 92vw); z-index: 50;
   background: var(--glass-strong); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border-left: 1px solid var(--edge); box-shadow: -8px 0 30px rgba(0,0,0,.45);
   transform: translateX(100%); transition: transform .22s ease; overflow-y: auto;
@@ -131,13 +133,18 @@ html, body {
 .set-group { padding: 10px 16px 2px; }
 .set-group-head { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; cursor: pointer; }
 .set-metric {
-  display: flex; align-items: center; gap: 8px; padding: 3px 16px 3px 36px;
+  display: flex; align-items: baseline; gap: 8px; padding: 3px 16px 3px 36px;
   color: var(--ink-soft); font-size: 12px; cursor: pointer;
 }
-.set-metric input[type=checkbox] { width: 13px; height: 13px; flex: none; }
+.set-metric input[type=checkbox] { width: 13px; height: 13px; flex: none; align-self: center; }
+.set-metric > span { min-width: 0; overflow-wrap: anywhere; }
+/* This em is the panel's full title. It was ellipsised at 140px, which showed
+   about 21 of the 59 characters of "PER-BLOCK SUBSTRATE - by block, deep
+   cadence (when emitted)" -- so the column meant to say WHICH panel a metric
+   belongs to was the one column that couldn't. Wraps now instead of clipping. */
 .set-metric em {
   color: var(--ink-faint); font-style: normal; font-size: 10px; margin-left: auto;
-  text-align: right; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: right; max-width: 52%; line-height: 1.35; overflow-wrap: anywhere;
 }
 
 .conn { font-size: 12px; letter-spacing: 1px; font-weight: 600; }
@@ -147,8 +154,16 @@ html, body {
 
 #layout { position: relative; z-index: 1; display: flex; height: calc(100% - 43px); }
 
+/* Width follows the longest run name instead of a fixed 248px. Run names are
+   unbroken strings (`probe_v5_d8_warmup15_512d_seed46`), so CSS will not break
+   them at a fixed width -- they simply overflowed the row and the tail was cut
+   off, which is how a `..._seed46` and a `..._seed97` become indistinguishable.
+   Content-sized between a floor and a cap; past the cap `.s-name` wraps rather
+   than clipping, so no name length can hide a character. */
 #sidebar {
-  width: 248px; flex: 0 0 248px; overflow-y: auto; padding: 12px;
+  flex: 0 0 auto; width: max-content;
+  min-width: 248px; max-width: min(38vw, 460px);
+  overflow-y: auto; padding: 12px;
   background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-right: 1px solid var(--edge);
 }
@@ -168,7 +183,9 @@ html, body {
 .s-trash:hover { color: var(--c-bad); }
 #stream-list li:hover { border-color: var(--c-opt); }
 #stream-list li.active { border-color: var(--c-opt); box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
-#stream-list .s-name { color: var(--ink); font-weight: 600; }
+/* anywhere: run names have no spaces to break at, so without this the tail is
+   simply lost past the sidebar's cap */
+#stream-list .s-name { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 #stream-list .s-meta { color: var(--ink-dim); font-size: 11px; margin-top: 3px; font-family: var(--mono); }
 .kind-tag {
   display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px;
@@ -195,7 +212,9 @@ html, body {
 .hidden-dd summary:hover { color: var(--ink); }
 .hidden-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .hidden-list li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; color: var(--ink-faint); }
-.s-hidden-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+/* was ellipsised at whatever width was left; a hidden run you cannot fully read
+   is a run you cannot confidently restore */
+.s-hidden-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); }
 .s-restore { background: none; border: none; color: var(--ink-dim); cursor: pointer; font-size: 13px; }
 .s-restore:hover { color: var(--c-good); }
 .s-delete { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 13px; }
@@ -217,7 +236,7 @@ html, body {
 
 /* collapsible streams rail: slides to a slim strip; the logo stays in the corner */
 #sidebar { position: relative; transition: width .22s ease, flex-basis .22s ease; }
-#sidebar.collapsed { width: 64px; flex: 0 0 64px; overflow: hidden; padding: 12px 8px; }
+#sidebar.collapsed { width: 64px; min-width: 64px; flex: 0 0 64px; overflow: hidden; padding: 12px 8px; }
 #sidebar.collapsed #sidebar-logo { width: 44px; height: 44px; margin: 34px auto 10px; }
 #sidebar.collapsed .sidebar-head, #sidebar.collapsed #stream-list,
 #sidebar.collapsed #hidden-wrap, #sidebar.collapsed #refresh { display: none; }
@@ -346,8 +365,15 @@ html, body {
   background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   padding: 12px 12px 8px; box-shadow: 0 4px 24px rgba(0,0,0,.28);
 }
-.panel-title { display: flex; justify-content: space-between; align-items: center; color: var(--ink-soft); letter-spacing: 1px; font-size: 11px; font-weight: 700; margin: 0 0 8px 2px; }
-.panel-expand { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+/* Long titles wrap; the enlarge button never gets squeezed out by them.
+   `gap` keeps the two apart once the title is allowed to grow. */
+.panel-title {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  color: var(--ink-soft); letter-spacing: 1px; font-size: 11px; font-weight: 700;
+  margin: 0 0 8px 2px; line-height: 1.35;
+}
+.panel-title > span { min-width: 0; overflow-wrap: anywhere; }
+.panel-expand { flex: none; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
 .panel-expand:hover { color: var(--c-opt); animation: icon-pulse 0.7s ease-in-out infinite; }
 
 /* enlarged panel (foreground overlay, translucent so the rest shows behind) */
@@ -377,18 +403,30 @@ html, body {
   position: absolute; z-index: 20; pointer-events: none;
   background: rgba(12, 17, 28, 0.94); border: 1px solid var(--edge-strong); border-radius: 8px;
   padding: 7px 9px; font-size: 11px; line-height: 1.5; font-family: var(--mono);
-  box-shadow: 0 8px 26px rgba(0,0,0,.5); white-space: nowrap; color: var(--ink-soft);
+  box-shadow: 0 8px 26px rgba(0,0,0,.5); color: var(--ink-soft);
+  /* was nowrap with no cap: a long event label ran off the plot and was clipped.
+     Short readings still occupy one line; only genuinely long labels wrap. */
+  max-width: 280px; overflow-wrap: anywhere;
 }
 .u-tip-x { color: var(--ink-dim); border-bottom: 1px solid var(--edge); margin-bottom: 4px; padding-bottom: 3px; }
 .u-tip-row b { color: #fff; }
 .u-tip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 
-/* progression readout */
-.panel-readout { margin-top: 8px; border-top: 1px solid var(--edge); padding-top: 7px; font-family: var(--mono); }
-.ro-row {
-  display: grid; grid-template-columns: 14px 88px minmax(150px, auto) 104px 1fr; gap: 8px;
-  align-items: baseline; font-size: 11px; padding: 2px 2px;
+/* progression readout
+   The grid lives on the CONTAINER, not on each row, and rows are display:contents
+   so every row shares one set of tracks. That buys two things at once: the label
+   column sizes to the longest label actually present (`precision_spread` and
+   `set_point_drift` overflowed the old fixed 88px and spilled into the values),
+   and the columns still line up vertically across rows -- which per-row grids
+   only did by the coincidence of every track being a fixed pixel width. */
+.panel-readout {
+  margin-top: 8px; border-top: 1px solid var(--edge); padding-top: 7px;
+  font-family: var(--mono); font-size: 11px;
+  display: grid;
+  grid-template-columns: 14px max-content minmax(140px, auto) max-content 1fr;
+  column-gap: 8px; row-gap: 3px; align-items: baseline;
 }
+.ro-row { display: contents; }
 .ro-dot { width: 9px; height: 9px; border-radius: 50%; align-self: center; }
 .ro-label { color: var(--ink-soft); font-weight: 600; }
 .ro-prog { color: var(--ink-dim); }
@@ -402,9 +440,11 @@ html, body {
 /* where this run sits against the designated reference band */
 .ro-band { color: var(--c-near); }
 /* provenance and interpretability notes under the rows */
+/* notes span the whole readout rather than sitting in one track */
 .ro-note {
+  grid-column: 1 / -1;
   font-size: 9.5px; color: var(--ink-faint); padding: 3px 2px 0 2px;
-  border-top: 1px dotted var(--edge); margin-top: 4px;
+  border-top: 1px dotted var(--edge); margin-top: 4px; line-height: 1.4;
 }
 .ro-note.warnnote { color: var(--c-near); border-top: none; margin-top: 2px; }
 .ro-spread { color: var(--ink-faint); text-align: right; }
@@ -417,10 +457,12 @@ html, body {
 .ro-delta.neutral { color: var(--ink-faint); }
 
 /* per-block heatmap */
+/* max-width so the longest metric name (`consolidation_fires`) is readable in
+   the closed select rather than being cut at the control's edge */
 .hm-select {
   background: var(--glass); color: var(--ink); border: 1px solid var(--edge);
   border-radius: 6px; padding: 2px 6px; font-family: var(--mono); font-size: 11px; margin-bottom: 6px;
-  cursor: pointer;
+  cursor: pointer; max-width: 100%;
 }
 .hm-select:hover { border-color: var(--c-opt); }
 /* the popup list is native chrome — options need their own dark styling */

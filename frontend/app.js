@@ -910,7 +910,12 @@ function eventMarkersPlugin(spec) {
           if (!best) { tip.style.display = "none"; return; }
           tip.textContent = best.label;
           tip.style.display = "block";
-          tip.style.left = Math.max(0, px - tip.offsetWidth / 2) + "px";
+          // Clamp to BOTH edges. Derived-event labels run long ("consolidation
+          // fire (+3, total 128) — at Greek page"), and centring on the mark
+          // without a right-hand clamp pushed the tail past the plot edge where
+          // it was clipped — the value tooltip already clamped, this one didn't.
+          const tw = tip.offsetWidth, avail = u.over.clientWidth;
+          tip.style.left = Math.max(0, Math.min(px - tw / 2, avail - tw)) + "px";
           tip.style.top = "4px";
         });
         u.over.addEventListener("mouseleave", () => { if (tip) tip.style.display = "none"; });
