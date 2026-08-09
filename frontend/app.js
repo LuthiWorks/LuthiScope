@@ -118,6 +118,7 @@ const GROUPS = {
           { label: "eff_rank", color: C.blue, good: "up", get: (r) => num(r.deep?.effective_rank) },
           { label: "stable_rank", color: C.purple, good: "up", get: (r) => num(r.deep?.stable_rank) },
           { label: "soloist_share", color: C.red, good: "down", get: (r) => num(r.deep?.top_dir_share) },
+          { label: "perplexity", color: C.orange, good: "down", get: (r) => { const v = num(r.light?.l_ntp ?? r.l_ntp); return v == null ? null : Math.exp(v); } },
           { label: "chorus_rank", color: C.teal, good: "up", get: (r) => num(r.deep?.chorus_stable_rank) },
         ]},
       ]},
@@ -263,6 +264,7 @@ const GROUPS = {
 const PANEL_DESCS = {
   "Learning|LOSS": "How wrong the model's predictions are right now (loss = the error score training tries to shrink). l_pred is the prediction part, l_sigreg is the anti-collapse penalty (a guard that stops the model from outputting the same thing for everything). Falling is good.",
   "Learning|HELDOUT EVAL (epoch boundaries)": "A test on material the model never trains on (heldout = kept out of training), run once per epoch (one full pass through the data). The honest measure of learning, as opposed to memorizing. Sparse dots, not a continuous line.",
+  "Dimension|PERPLEXITY (when emitted)": "How surprised the model is by each next token, on a human scale: 32000 = pure guessing over the whole vocabulary, ~200 = a small model reading fluently, single digits = mastery. THE deployment-readiness gauge for the speaking era -- it cannot be flattered by a collapsed representation, because predicting words well requires the space behind them to work. Down is good.",
   "Dimension|SOLOIST SHARE (when emitted)": "How much of the representation's total variation is carried by its single loudest direction (the 'soloist'). Down is good: under ~3% matches healthy training; near 100% means one direction is the whole show. This is the number the variance-budget work taxes directly.",
   "Dimension|CHORUS RANK (when emitted)": "The stable rank of everything EXCEPT the loudest direction -- the health of the supporting cast. Up is good. A rebuilding chorus under a stubborn soloist shows here while plain stable rank stays flat; watching both tells you whether a low stable rank means a dead space or one loud voice.",
   "Optimization|GRADIENT NORM (when emitted)": "The overall size of the correction signal each step (gradient = the direction and amount training wants to change each weight). Sudden spikes can mean instability; a slow settle is normal.",

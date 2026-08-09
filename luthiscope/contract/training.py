@@ -42,6 +42,9 @@ class DeepMetrics(_Lenient):
     # chorus_stable_rank = stable rank with the soloist excluded (up = good).
     top_dir_share: Optional[float] = None
     chorus_stable_rank: Optional[float] = None
+    # 2026-08-09: LLM-JEPA era. Per-step next-token loss (nats); the
+    # deployment-readiness gauge is its exponential, perplexity.
+    l_ntp: Optional[float] = None
     sv_index_at_90pct: Optional[int] = None
     sv_index_at_99pct: Optional[int] = None
     log_sv_max: Optional[float] = None
