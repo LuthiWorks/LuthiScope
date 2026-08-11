@@ -24,6 +24,15 @@ const GROUPS = {
           { label: "l_pred", color: C.teal, good: "down", get: (r) => num(r.l_pred) },
           { label: "l_sigreg", color: C.purple, good: "down", get: (r) => num(r.l_sigreg) },
         ]},
+        // VISReg replacement era (2026-08-11): l_sigreg is null in these
+        // runs and the regularizer's decomposition lives here instead.
+        // Auto-hidden until a VISReg arm emits the fields.
+        { title: "VISREG (when emitted)", series: [
+          { label: "l_visreg", color: C.blue, good: "down", get: (r) => num(r.l_visreg) },
+          { label: "shape", color: C.purple, good: "down", get: (r) => num(r.l_vis_shape) },
+          { label: "center", color: C.orange, good: "down", get: (r) => num(r.l_vis_center) },
+          { label: "scale", color: C.teal, good: "down", get: (r) => num(r.l_vis_scale) },
+        ]},
         // Heldout eval fires only at epoch boundaries, so this series is
         // a handful of points across a 72k-step run: sparse=true draws
         // visible markers and the line spans the null gaps. The LM-era
@@ -267,6 +276,7 @@ const GROUPS = {
 // GROUPS exactly; a missing key just means no tooltip, never an error.
 const PANEL_DESCS = {
   "Learning|LOSS": "How wrong the model's predictions are right now (loss = the error score training tries to shrink). l_pred is the prediction part, l_sigreg is the anti-collapse penalty (a guard that stops the model from outputting the same thing for everything). Falling is good.",
+  "Learning|VISREG (when emitted)": "The anti-collapse regularizer that replaced SIGReg in VISReg-era runs (2026-08-11), split into its three parts: shape (do the latent directions look like healthy, varied signals?), center (is the whole representation drifting off-center? -- the classic first symptom of collapse), and scale (are dimensions at a healthy volume?). Starts ENORMOUS on an untrained model because it is loudly objecting to the newborn representation's offset -- what matters is that it falls by orders of magnitude as training bites. Falling is good.",
   "Learning|HELDOUT EVAL (epoch boundaries)": "A test on material the model never trains on (heldout = kept out of training), run once per epoch (one full pass through the data). The honest measure of learning, as opposed to memorizing. Sparse dots, not a continuous line.",
   "Language|PERPLEXITY (when emitted)": "How surprised the model is by each next token, on a human scale: 32000 = pure guessing over the whole vocabulary, ~200 = a small model reading fluently, single digits = mastery. THE deployment-readiness gauge for the speaking era -- it cannot be flattered by a collapsed representation, because predicting words well requires the space behind them to work. Down is good.",
   "Dimension|SOLOIST SHARE (when emitted)": "How much of the representation's total variation is carried by its single loudest direction (the 'soloist'). Down is good: under ~3% matches healthy training; near 100% means one direction is the whole show. This is the number the variance-budget work taxes directly.",
