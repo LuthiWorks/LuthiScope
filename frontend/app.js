@@ -40,7 +40,7 @@ const GROUPS = {
         // log ever emits them, so the tiles read "no data" forever and
         // the (invisible) sparse heldout points made the whole panel
         // look dead (Brian's report).
-        { title: "HELDOUT EVAL (epoch boundaries)", sparse: true, marks: "epoch", series: [
+        { title: "HELDOUT EVAL · NMSE is the guard's gauge", sparse: true, marks: "epoch", series: [
           { label: "heldout_l_pred", color: C.orange, good: "down", get: (r) => num(r.heldout?.text?.l_pred_mean) },
           { label: "heldout_nmse", color: C.red, good: "down", get: (r) => num(r.heldout?.text?.nmse_mean) },
         ]},
@@ -277,7 +277,7 @@ const GROUPS = {
 const PANEL_DESCS = {
   "Learning|LOSS": "How wrong the model's predictions are right now (loss = the error score training tries to shrink). l_pred is the prediction part, l_sigreg is the anti-collapse penalty (a guard that stops the model from outputting the same thing for everything). Falling is good.",
   "Learning|VISREG (when emitted)": "The anti-collapse regularizer that replaced SIGReg in VISReg-era runs (2026-08-11), split into its three parts: shape (do the latent directions look like healthy, varied signals?), center (is the whole representation drifting off-center? -- the classic first symptom of collapse), and scale (are dimensions at a healthy volume?). Starts ENORMOUS on an untrained model because it is loudly objecting to the newborn representation's offset -- what matters is that it falls by orders of magnitude as training bites. Falling is good.",
-  "Learning|HELDOUT EVAL (epoch boundaries)": "A test on material the model never trains on (heldout = kept out of training), run once per epoch (one full pass through the data). The honest measure of learning, as opposed to memorizing. Sparse dots, not a continuous line.",
+  "Learning|HELDOUT EVAL · NMSE is the guard's gauge": "A test on material the model never trains on (heldout = kept out of training). Since 2026-08-11 the quick few-batch checks the divergence guard runs every cadence are logged too (marked 'quick' in the record), so heldout_nmse is the SAME number that can kill a run: NMSE 1.0 = no better than predicting the mean, and the guard fires above 2.0. The epoch-end point is the higher-quality 50-batch estimate. Down is good.",
   "Language|PERPLEXITY (when emitted)": "How surprised the model is by each next token, on a human scale: 32000 = pure guessing over the whole vocabulary, ~200 = a small model reading fluently, single digits = mastery. THE deployment-readiness gauge for the speaking era -- it cannot be flattered by a collapsed representation, because predicting words well requires the space behind them to work. Down is good.",
   "Dimension|SOLOIST SHARE (when emitted)": "How much of the representation's total variation is carried by its single loudest direction (the 'soloist'). Down is good: under ~3% matches healthy training; near 100% means one direction is the whole show. This is the number the variance-budget work taxes directly.",
   "Dimension|CHORUS RANK (when emitted)": "The stable rank of everything EXCEPT the loudest direction -- the health of the supporting cast. Up is good. A rebuilding chorus under a stubborn soloist shows here while plain stable rank stays flat; watching both tells you whether a low stable rank means a dead space or one loud voice.",
@@ -1413,7 +1413,22 @@ function panelWidth() {
 
 function refreshData() {
   const cfg = GROUPS[current.kind];
-  const pts = records.filter((r) => cfg.x(r) != null);
+  // Resume-safe normalization (2026-08-12). A mid-run resume re-appends
+  // steps already in the file, so raw file order is NON-MONOTONE — and
+  // uPlot's contract is strictly ascending x, so every uPlot panel went
+  // blank on the first resumed run (the custom heatmap, with its own
+  // renderer, was the only survivor — which is what gave the bug away).
+  // Merge rows sharing a step (later rows supersede: a resumed row
+  // replaces its pre-crash ghost; a quick-heldout row merges into its
+  // diagnostics sibling), then sort ascending.
+  const byX = new Map();
+  for (const r of records) {
+    const x = cfg.x(r);
+    if (x == null) continue;
+    const prev = byX.get(x);
+    byX.set(x, prev ? Object.assign({}, prev, r) : r);
+  }
+  const pts = [...byX.values()].sort((a, b) => cfg.x(a) - cfg.x(b));
   const xs = pts.map(cfg.x);
   rankFloored = current.kind === "training" && computeRankFloored(records);
   // Event-locked view centres on EXPOSURES when a canary is declared (the
@@ -1436,7 +1451,9 @@ function refreshData() {
     ? compare.records.filter((r) => cfg.x(r) != null) : null;
 
   for (const c of charts) {
-    if (c.hm) { c.hm.setData(records); continue; }
+    // Heatmaps get the same normalized rows: without it a resumed run
+    // draws its overlap region twice in file order.
+    if (c.hm) { c.hm.setData(pts); continue; }
     let seriesData;
     if (locked) {
       // average each (non-compare) series across a window around every serving
