@@ -199,6 +199,20 @@ html, body {
 }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
+/* settings > Metric panels tracked-dots: live = data in the stream's recent
+   records (pulses), hist = only earlier in its history (dim, still) */
+.m-dot { font-size: 10px; vertical-align: 1px; }
+.m-dot:not(:empty) { margin-right: 5px; }
+.m-dot.live { color: var(--c-good); animation: live-pulse 1.6s ease-in-out infinite; }
+.m-dot.hist { color: var(--ink-dim); opacity: .75; }
+
+/* keys the stream carries that no panel reads */
+.uncat-list { padding: 4px 16px 10px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.uncat-list code {
+  font-family: var(--mono); font-size: 10px; color: var(--ink-dim);
+  background: rgba(255,255,255,0.05); padding: 1px 5px; border-radius: 3px;
+}
+
 #refresh {
   margin-top: 10px; width: 100%; padding: 7px; background: var(--glass);
   color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 8px;

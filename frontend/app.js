@@ -611,6 +611,7 @@ function bandVerdict(label, st) {
 let records = [];
 let charts = [];
 let current = null;
+let currentMeta = null; // /runmeta for the loaded stream (cadence, axis, thresholds)
 let ws = null;
 let groupSeries = {};   // group title -> flat list of its visible series
 let maximized = null;   // { panel, rec } of the currently enlarged panel
@@ -1482,6 +1483,7 @@ function refreshData() {
     renderReadout(c.readoutEl, c.spec, seriesData, locked ? relXs : xs);
   }
   updateOverview(xs);
+  updateMetricDots();   // keep the settings-menu tracked-dots honest as data arrives
 }
 
 // Event navigation for the locked view (Brian, 2026-07-26): step through
@@ -1699,6 +1701,26 @@ async function loadStreams() {
   renderStreamList();
 }
 
+// Quiet background refresh of the stream list (2026-08-14). The list used to
+// be a snapshot from the last manual rescan: record counts froze, the "ago"
+// labels aged in place, and the live light stayed whatever the scan caught —
+// a vitals display that silently freezes while looking calm, the exact
+// failure the WS auto-reconnect note above describes. Poll the same endpoint
+// and re-render in place; the rescan button stays for immediacy. Skipped
+// while the pointer is over the list so rows don't rebuild mid-click.
+const STREAMS_POLL_MS = 10000;
+setInterval(async () => {
+  const list = $("stream-list");
+  if (!list || list.matches(":hover")) return;
+  try {
+    allStreams = await (await fetch("/api/streams")).json();
+    renderStreamList();
+  } catch (e) {
+    // Backend unreachable: keep the last known list rather than blanking it.
+    // The conn indicator reports connectivity; this poll only reports staleness.
+  }
+}, STREAMS_POLL_MS);
+
 function renderStreamList() {
   // reconcile permanently-deleted streams: stay gone unless the run changed
   let forgotChanged = false;
@@ -1724,6 +1746,9 @@ function renderStreamList() {
   for (const id of [...selectedIds]) if (!visibleIds.has(id)) selectedIds.delete(id);
   for (const s of visible) {
     const li = document.createElement("li");
+    // The list re-renders on the background poll now, so the selected row's
+    // highlight must be restored from state or the poll erases it.
+    if (current && current.id === s.id) li.classList.add("active");
     const check = document.createElement("input");
     check.type = "checkbox"; check.className = "s-check";
     check.title = "Select for batch hide";
@@ -1735,7 +1760,11 @@ function renderStreamList() {
     };
     const main = document.createElement("div");
     main.className = "s-main";
-    const liveDot = s.live ? `<span class="live-dot" title="actively logging">●</span>` : "";
+    const liveDot = s.live
+      ? `<span class="live-dot" title="actively logging — last write ` +
+        `${s.last_write_age != null ? gint(Math.round(s.last_write_age)) + "s ago" : "age unknown"}` +
+        `${s.live_window ? `; reads as stopped after ${gint(Math.round(s.live_window))}s without one` : ""}">●</span>`
+      : "";
     const isRef = refRuns.includes(s.id);
     main.innerHTML =
       `<div class="s-name">${liveDot}${s.run_dir}<span class="kind-tag kind-${s.kind}">${s.kind}</span>` +
@@ -1777,6 +1806,8 @@ function renderHidden(hiddenStreams) {
   const wrap = $("hidden-wrap");
   if (!wrap) return;
   if (!hiddenStreams.length) { wrap.innerHTML = ""; return; }
+  // survive the background poll's re-render without snapping shut
+  const wasOpen = !!(wrap.querySelector(".hidden-dd") || {}).open;
   wrap.innerHTML =
     `<details class="hidden-dd"><summary>Hidden (${hiddenStreams.length})</summary>` +
     `<ul class="hidden-list"></ul><button class="restore-all">restore all</button></details>`;
@@ -1799,6 +1830,7 @@ function renderHidden(hiddenStreams) {
     for (const s of hiddenStreams) hiddenIds.delete(s.id);
     saveHidden(); renderStreamList();
   };
+  if (wasOpen) wrap.querySelector(".hidden-dd").open = true;
 }
 
 // Short plot labels for the lines a run declares. Kept explicit rather than
@@ -1878,6 +1910,7 @@ async function selectStream(id, kind, li) {
   // on first paint rather than appearing a beat later.
   let meta = null;
   try { meta = await (await fetch(`/api/streams/${encodeURI(id)}/runmeta`)).json(); } catch (e) { meta = null; }
+  currentMeta = meta;
   applyRunMeta(meta);
   await loadRefBands();
   derivedEvents = deriveEvents(records, streamEvents.filter((e) => e.kind === "canary"));
@@ -2038,16 +2071,16 @@ function buildMetricSettings() {
   const panel = $("settings-panel");
   if (!panel) return;
   const KIND_LABEL = { training: "Training", cognition: "Cognition" };
-  // live-dot per metric: green pulse = this metric has data in the loaded
-  // stream right now (Brian, 2026-07-25). Shown regardless of checkbox state,
-  // so a disabled-but-active metric is findable without trial and error.
-  const kindActive = (kind) => current && current.kind === kind && records.length > 0;
-  const dot = `<span class="live-dot" title="data present in the loaded stream">●</span>`;
-  const seriesLive = (kind, s) => kindActive(kind) && records.some((r) => s.get(r) != null);
-  const heatmapLive = (kind, p) => kindActive(kind) && records.some(p.has);
+  // Tracked-dots per metric: rendered as empty placeholders here and filled by
+  // updateMetricDots(), which re-runs on every data refresh. They used to be
+  // baked into this HTML at open time — a snapshot of whichever stream
+  // happened to be loaded, never updated, and never saying which stream it
+  // described. Metrics then read as "tracked" that the run being watched
+  // doesn't emit, and vice versa (Brian's report, 2026-08-14).
   let html = `<div class="settings-head"><button id="settings-back" title="back">‹</button>METRIC PANELS<button id="settings-close">✕</button></div>`;
-  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels whose data is absent from the current stream auto-hide — turn on the switch below to render them anyway as empty shells. A pulsing green dot marks metrics with data in the loaded stream.</div>`;
+  html += `<div class="set-note">Unchecked metrics stay hidden even when present in the stream. Panels whose data is absent from the current stream auto-hide — turn on the switch below to render them anyway as empty shells. Dots describe the loaded stream (<b id="dot-stream">none</b>): a pulsing green dot = data in its recent records (actively tracked now); a dim dot = present earlier in its history but not recently.</div>`;
   html += `<label class="set-row"><span>Show panels without data</span><input type="checkbox" id="show-empty-panels" ${showEmptyPanels ? "checked" : ""}></label>`;
+  html += `<div id="uncat-keys"></div>`;
   for (const kind in GROUPS) {
     html += `<div class="settings-cat">${KIND_LABEL[kind] || kind} metrics</div>`;
     for (const grp of GROUPS[kind].groups) {
@@ -2062,13 +2095,15 @@ function buildMetricSettings() {
       for (const p of grp.panels) {
         if (p.type === "heatmap") {
           const id = metricId(kind, grp.title, p.title, "*");
-          html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
-            ` ${metricEnabled(id) ? "checked" : ""}><span>${heatmapLive(kind, p) ? dot : ""}${p.title}</span><em>heatmap</em></label>`;
+          const esc = id.replace(/"/g, "&quot;");
+          html += `<label class="set-metric"><input type="checkbox" data-mid="${esc}"` +
+            ` ${metricEnabled(id) ? "checked" : ""}><span><span class="m-dot" data-dot="${esc}"></span>${p.title}</span><em>heatmap</em></label>`;
         } else {
           for (const s of p.series) {
             const id = metricId(kind, grp.title, p.title, s.label);
-            html += `<label class="set-metric"><input type="checkbox" data-mid="${id.replace(/"/g, "&quot;")}"` +
-              ` ${metricEnabled(id) ? "checked" : ""}><span>${seriesLive(kind, s) ? dot : ""}${s.label}</span><em>${p.title}</em></label>`;
+            const esc = id.replace(/"/g, "&quot;");
+            html += `<label class="set-metric"><input type="checkbox" data-mid="${esc}"` +
+              ` ${metricEnabled(id) ? "checked" : ""}><span><span class="m-dot" data-dot="${esc}"></span>${s.label}</span><em>${p.title}</em></label>`;
           }
         }
       }
@@ -2120,6 +2155,139 @@ function buildMetricSettings() {
   });
   $("settings-back").onclick = () => buildSettings();
   $("settings-close").onclick = () => panel.classList.remove("open");
+  updateMetricDots();
+}
+
+// ---- tracked-metric dots + uncharted-key disclosure (2026-08-14) ----
+//
+// "Tracked" is a claim about the stream being watched RIGHT NOW, so the dots
+// are recomputed from the loaded stream on every data refresh instead of being
+// baked into the menu's HTML at open time, and the menu names the stream they
+// describe. Two honest states instead of one:
+//   pulsing green — the metric appears in the stream's RECENT records
+//                   (within ~2 logging cadences of the newest step);
+//   dim          — it appears earlier in this stream's history but not
+//                   recently (a resumed or reconfigured run: "was tracked"
+//                   must not read as "is tracked").
+
+// Records within ~2 declared logging cadences of the newest step — "recent"
+// judged against the run's own rhythm, not a fixed row count, so a sparse
+// deep-cadence metric isn't misread as historic between firings.
+function recentRecords() {
+  if (!current || !records.length) return [];
+  const cfg = GROUPS[current.kind];
+  const xs = records.map(cfg.x).filter((v) => v != null);
+  if (!xs.length) return records.slice(-24);
+  const c = (currentMeta && currentMeta.cadence) || {};
+  const interval = Math.max(c.deep_interval_batches || 0, c.light_interval_batches || 0);
+  if (!interval) return records.slice(-24);   // no declared cadence: fall back to a tail
+  const cutoff = Math.max(...xs) - 2 * interval;
+  return records.filter((r) => { const x = cfg.x(r); return x != null && x >= cutoff; });
+}
+
+function updateMetricDots() {
+  const panel = $("settings-panel");
+  if (!panel || !panel.querySelector("[data-dot]")) return;   // metric page not open
+  const streamLabel = $("dot-stream");
+  if (streamLabel) streamLabel.textContent = current ? current.id : "none";
+  const recent = recentRecords();
+  for (const el of panel.querySelectorAll("[data-dot]")) {
+    const [kind, group, panelTitle, label] = el.dataset.dot.split("|");
+    const grp = GROUPS[kind] && GROUPS[kind].groups.find((g) => g.title === group);
+    const p = grp && grp.panels.find((pp) => pp.title === panelTitle);
+    let test = null;
+    if (p) {
+      if (p.type === "heatmap") test = (r) => !!p.has(r);
+      else {
+        const s = p.series.find((ss) => ss.label === label);
+        if (s) test = (r) => s.get(r) != null;
+      }
+    }
+    let cls = "m-dot", title = "";
+    if (test && current && current.kind === kind && records.length) {
+      if (recent.some(test)) {
+        cls = "m-dot live";
+        title = "actively tracked: data in the stream's recent records";
+      } else if (records.some(test)) {
+        cls = "m-dot hist";
+        title = "in this stream's history, but absent from its recent records";
+      }
+    }
+    el.className = cls;
+    el.title = title;
+    el.textContent = cls === "m-dot" ? "" : "●";
+  }
+  renderUncharted();
+}
+
+// Keys that are structure/bookkeeping, not metrics — deliberately chartless.
+const STRUCTURAL_KEYS = new Set(["step", "cycle", "modality", "nonfinite",
+  "heldout.text.n_batches", "heldout.text.quick"]);
+
+// Would this key light any panel if it were the only thing in a record?
+// Exact against alias chains (r.a ?? r.b) because the accessors themselves are
+// run against a minimal record carrying only this path. Arrays are treated as
+// leaves (substrate_blocks is one key, not a subtree). Keys that themselves
+// contain a dot mis-split here; today none of the charted ones do.
+const chartedCache = new Map();
+function pathCharted(kind, path, value) {
+  const ck = `${kind}|${path}`;
+  if (chartedCache.has(ck)) return chartedCache.get(ck);
+  const parts = path.split(".");
+  const rec = {};
+  let o = rec;
+  for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]] = {};
+  o[parts[parts.length - 1]] = value;
+  const cfg = GROUPS[kind];
+  let hit = cfg.x(rec) != null;   // the x axis itself counts as read
+  if (!hit) outer: for (const grp of cfg.groups) {
+    for (const p of grp.panels) {
+      try {
+        if (p.type === "heatmap") { if (p.has(rec)) { hit = true; break outer; } }
+        else for (const s of p.series) { if (s.get(rec) != null) { hit = true; break outer; } }
+      } catch (e) { /* an accessor throwing on a partial record is a non-hit */ }
+    }
+  }
+  chartedCache.set(ck, hit);
+  return hit;
+}
+
+// Every leaf path in the loaded stream that carries actual data (non-null at
+// least once). Objects are descended; arrays are leaves.
+function streamKeyPaths() {
+  const seen = new Map();
+  const walk = (o, prefix) => {
+    for (const k in o) {
+      const v = o[k];
+      const path = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === "object" && !Array.isArray(v)) walk(v, path);
+      else if (v != null && !seen.has(path)) seen.set(path, v);
+    }
+  };
+  for (const r of records) walk(r, "");
+  return seen;
+}
+
+// The producer tracks more than the catalog charts (the VISReg-era
+// diagnostics — offset dominance, trunk norm gain, centered cosine — arrived
+// before their panels did). A menu that lists only what it charts reads as
+// "this is everything the run tracks", which is a silent cap. Name the rest.
+function renderUncharted() {
+  const host = $("uncat-keys");
+  if (!host) return;
+  if (!current || !records.length) { host.innerHTML = ""; return; }
+  const paths = [];
+  for (const [path, v] of streamKeyPaths()) {
+    if (STRUCTURAL_KEYS.has(path)) continue;
+    if (!pathCharted(current.kind, path, v)) paths.push(path);
+  }
+  if (!paths.length) { host.innerHTML = ""; return; }
+  paths.sort();
+  host.innerHTML =
+    `<div class="settings-cat">Uncharted keys in this stream</div>` +
+    `<div class="set-note">The loaded stream carries ${paths.length} key(s) no panel reads — ` +
+    `tracked by the producer, invisible in this UI. Listed so "not shown" cannot read as "not tracked".</div>` +
+    `<div class="uncat-list">${paths.map((p) => `<code>${p}</code>`).join("")}</div>`;
 }
 
 function buildBgSettings() {

@@ -199,6 +199,20 @@ class Store:
         cur = self.conn.execute("SELECT run_id, kind, source_path FROM runs ORDER BY run_id")
         return [dict(r) for r in cur.fetchall()]
 
+    def recent_elapsed(self, run_id: str, limit: int = 12) -> list[float]:
+        """The last ``limit`` elapsed_seconds values for a training run, newest
+        first. The gaps between them are the run's own write rhythm — what
+        liveness must be judged against, instead of a fixed constant that
+        imports some other cadence's physics (a run logging every ~60s spent
+        half its life reading as dead under a 30s window)."""
+        cur = self.conn.execute(
+            "SELECT elapsed_seconds FROM training_records "
+            "WHERE run_id=? AND elapsed_seconds IS NOT NULL "
+            "ORDER BY seq DESC LIMIT ?",
+            (run_id, limit),
+        )
+        return [float(r[0]) for r in cur.fetchall()]
+
     def count(self, run_id: str, kind: str) -> int:
         table = "training_records" if kind == TRAINING else "cognition_records"
         cur = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE run_id=?", (run_id,))

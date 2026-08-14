@@ -33,19 +33,16 @@ if getattr(sys, "frozen", False):  # running inside a PyInstaller bundle
 else:
     FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 LIVE_POLL_SECONDS = 0.5
-LIVE_STALE_SECONDS = 30.0  # a stream whose file changed more recently than this is "live"
+LIVE_STALE_SECONDS = 30.0   # liveness floor: files younger than this are always "live"
+LIVE_GAP_MULT = 2.5         # tolerate up to this many × the run's own worst recent write gap
 
 
-def _is_live(path: Path) -> bool:
-    """True if the source file was written within LIVE_STALE_SECONDS.
-
-    A cheap, read-only liveness signal: an actively-training run appends to its
-    log continuously, so a recent mtime means the producer is alive. We never
-    touch the producer process — only stat its file."""
+def _file_age(path: Path) -> float | None:
+    """Seconds since the source file was last written; None if unstat-able."""
     try:
-        return (time.time() - path.stat().st_mtime) < LIVE_STALE_SECONDS
+        return time.time() - path.stat().st_mtime
     except OSError:
-        return False
+        return None
 
 
 def _scrub_nonfinite(obj):
@@ -127,6 +124,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"runs_dir": str(candidate), "streams_found": n,
                 "persisted": persisted}
 
+    def live_info(s) -> dict:
+        """Liveness judged against the run's OWN write rhythm.
+
+        The old rule — "live = written within 30s" — imported a cadence
+        assumption: a healthy run logging every ~60s (light_interval 100 at
+        ~0.6 s/step) read as dead for the back half of every gap, so the
+        indicator flickered off while training continued (Brian's report,
+        2026-08-14). The window is now the larger of the floor and
+        LIVE_GAP_MULT × the worst gap between the run's recent writes
+        (elapsed_seconds deltas — run-time between records equals wall-time
+        between appends while the producer is alive). A run is only "not
+        live" once it has missed multiple of its own cadences. The window and
+        age are returned so the frontend can say WHY, not just show a dot."""
+        age = _file_age(s.path)
+        window = LIVE_STALE_SECONDS
+        if s.kind == TRAINING:
+            with lock:
+                es = store.recent_elapsed(s.stream_id)
+            gaps = [a - b for a, b in zip(es, es[1:]) if a - b > 0]  # es is newest-first
+            if gaps:
+                window = max(window, LIVE_GAP_MULT * max(gaps))
+        return {
+            "live": age is not None and age < window,
+            "last_write_age": age,
+            "live_window": window,
+        }
+
     @app.get("/api/streams")
     def list_streams():
         out = []
@@ -134,18 +158,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ensure_ingested(s)
             with lock:
                 n = store.count(s.stream_id, s.kind)
-            out.append(
-                {
-                    "id": s.stream_id,
-                    "run_dir": s.run_dir,
-                    "kind": s.kind,
-                    "n_records": n,
-                    "live": _is_live(s.path),
-                    # Recency, so the list can order and label by it. discover_all
-                    # already returns newest-first; the client preserves that order.
-                    "mtime": s.mtime or None,
-                }
-            )
+            entry = {
+                "id": s.stream_id,
+                "run_dir": s.run_dir,
+                "kind": s.kind,
+                "n_records": n,
+                # Recency, so the list can order and label by it. discover_all
+                # already returns newest-first; the client preserves that order.
+                "mtime": s.mtime or None,
+            }
+            entry.update(live_info(s))
+            out.append(entry)
         return out
 
     @app.get("/api/streams/{stream_id:path}/runmeta")

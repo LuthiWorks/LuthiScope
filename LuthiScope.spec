@@ -20,8 +20,14 @@ hidden = (
 # `pyinstaller` command resolves to 3.13. Packages absent from the running
 # interpreter collect as empty and the exe shrinks and loses its window with
 # no other symptom. ALWAYS build with:
-#   python -m PyInstaller LuthiScope.spec --noconfirm --clean
+#   .venv/Scripts/python -m PyInstaller LuthiScope.spec --noconfirm --clean
 # The find_spec check below makes a wrong-interpreter build die loudly.
+#
+# SIZE TRAP (2026-08-14, the inverse failure): the system 3.10 python also
+# passes the guard below, but it carries torch -- a build from it "succeeds"
+# at 48 MB instead of ~16 MB. Build from the repo's .venv (the lean, complete
+# env). Sanity check after any build: dist/LuthiScope.exe should be ~16 MB;
+# a big jump either way means the wrong interpreter built it.
 import importlib.util as _ilu
 import os as _os
 import sys as _sys
