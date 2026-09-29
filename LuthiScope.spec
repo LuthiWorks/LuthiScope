@@ -66,7 +66,7 @@ a = Analysis(
     pathex=["."],
     binaries=extra_bins,
     datas=[
-        ("frontend", "frontend"),            # index.html, app.js, styles.css, vendor/, assets/
+        ("frontend", "frontend"),            # index.html, styles.css, js/ (ES modules), vendor/, assets/
         ("packaging/luthiscope.ico", "packaging"),
     ] + extra_datas,
     hiddenimports=hidden + extra_hidden,
