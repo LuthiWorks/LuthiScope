@@ -109,7 +109,13 @@ const GROUPS = {
         ]},
         { title: "PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)", type: "heatmap",
           has: (r) => Array.isArray(r.substrate_blocks) && r.substrate_blocks.length > 0,
-          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "precision_spread", "prediction_norm", "error_acc_mean", "consolidation_fires"] },
+          // 2026-09-29: added the per-block collapse trio (effective_rank,
+          // top_dir_share, chorus_eff_rank -- emitted since 2026-08-14 but
+          // never selectable here) and the contribution pair
+          // (contrib_var_ratio, contrib_chorus -- emitted since 2026-09-29;
+          // what the block ADDS, not what it outputs).
+          metrics: ["set_point_drift", "update_ema_mean", "precision_mean", "precision_spread", "prediction_norm", "error_acc_mean", "consolidation_fires",
+                    "effective_rank", "top_dir_share", "chorus_eff_rank", "contrib_var_ratio", "contrib_chorus"] },
       ]},
       { title: "Representation", panels: [
         // Polarities corrected 2026-07-18 after the JEPA pilot's detector
@@ -293,7 +299,7 @@ const PANEL_DESCS = {
   "Substrate vitality|CONSOLIDATION FIRES · cumulative (when emitted)": "A running count of consolidation events — moments where recent experience gets locked into lasting structure (memory becoming anatomy). The interesting shape is where the steps land: calm windows are consolidation season.",
   "Substrate vitality|PRECISION (when emitted)": "How confident the living layers are in their own predictions (precision = confidence weighting; higher means the substrate trusts what it expects to see). Climbs as its world-model sharpens.",
   "Substrate vitality|TRUST RATIO SPREAD (p95/p5, when emitted)": "Whether the substrate trusts some inputs more than others (relative trust, the v5 mechanism). Near 1.0 = it treats everything the same; above 1 = it has real preferences. A state readout, not a score.",
-  "Substrate vitality|PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)": "The same substrate vitals, but shown for each block (block = one layer-like unit) as colored rows over time — so a single struggling block stands out even when the average looks fine.",
+  "Substrate vitality|PER-BLOCK SUBSTRATE · by block, deep cadence (when emitted)": "The same substrate vitals, but shown for each block (block = one layer-like unit) as colored rows over time — so a single struggling block stands out even when the average looks fine. The dropdown also carries each block's collapse trio (effective_rank, top_dir_share, chorus_eff_rank: read chorus alongside rank — low rank with high chorus is a loud soloist over an intact representation, low with low is real collapse) and the contribution pair (contrib_var_ratio, contrib_chorus, since 2026-09-29): what the block ADDS, not what it outputs. A block can read healthy on every output gauge while adding nothing — the residual stream carries the richness past it. contrib_var_ratio near zero is that bypass signature; contrib_chorus blank means the block's addition is a single direction, not a rich transformation.",
   "Representation|VITALITY · ENCODER STD / PREDICTOR-TRIVIAL COSINE": "Anti-collapse vitals. std = how varied the model's internal descriptions are (all-identical outputs would be collapse); triv_cos = how close the predictor is to just copying its input (1.0 = copying, the trivial cheat). Levels matter more than direction here.",
   "Representation|DIMENSION · RANK (deep cadence — sparse)": "How many independent dimensions of description the model actually uses (effective rank = the working size of its vocabulary of ideas). A sustained drop means its representation is thinning out. Measured rarely — sparse dots. Read the ABSOLUTE values, not the percent: the percent is anchored to this run's first deep firing, which is the init state in every run and not a health reading. The dashed floor at rank 1 is one direction — degenerate at any width. A shaded band appears only if you designate reference runs (select them in the streams list, then ◫); it is recomputed from those runs' own logs, step-matched, and never stored.",
   "Throughput|TOKENS CONSUMED": "Total amount of data seen so far, in tokens (token = one small chunk of text/audio/image the model reads at a time). A straight-line odometer.",

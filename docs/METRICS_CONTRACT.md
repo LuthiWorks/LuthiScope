@@ -113,10 +113,25 @@ Representation-spectrum diagnostics from an SVD of the latent covariance.
 
 Top-level array, one object **per PC block** (so a single drifting block surfaces
 even when the cross-block `substrate{}` mean looks healthy — intended for a
-blocks×time heatmap). Each entry: `set_point_drift`, `update_ema_mean`,
-`precision_mean`, `prediction_norm`, `error_acc_mean` (floats; a value may be
-`null` if that block's `aliveness()` omitted the key). Emitted at deep cadence only
-to bound payload size.
+blocks×time heatmap). Emitted at deep cadence only to bound payload size.
+A value may be `null` if that block's `aliveness()` omitted the key.
+
+> **Amendment 2026-09-29:** the field list below was stale (it predated the
+> 2026-08-14 per-block rank trio). This is now the full set as emitted by
+> `JEPATrainer` (`luthi/v2/jepa_runner.py`).
+
+Per-block fields:
+
+| Field | Meaning |
+|---|---|
+| `set_point_drift`, `update_ema_mean`, `weight_abs_mean` | Living-weight drift from the homeostatic set point; mean self-modification update (with weight scale for context). |
+| `error_rms`, `precision_mean`, `precision_spread`, `prediction_norm`, `error_acc_mean` | Prediction-error and precision (confidence) vitals. |
+| `consolidation_fires`, `consolidation_replayed_total`, `consolidation_noop_fires` | Consolidation triggers vs episodes actually replayed (fires with no replay = mechanism running on an empty store). |
+| `episodes_stored`, `episode_writes`, `recall_fires`, `episode_context_similarity`, `episode_salience_floor`, `episode_age_span`, `band_boost_rows`, `band_damp_rows` | Episode-store health and activity-band state. |
+| `nonfinite_forward_skips`, `band_degenerate_skips`, `weight_pred_cosine` | Silent-skip counters (living channel intermittently off) and weight-prediction alignment. |
+| `effective_rank`, `top_dir_share`, `chorus_eff_rank` | Per-block collapse trio (since 2026-08-14). Read chorus *alongside* rank: low rank + high chorus = soloist over an intact representation; low + low = real collapse. Effective rank alone orders those states backwards. |
+| `contrib_var_ratio`, `contrib_chorus` | Per-block **contribution** gauges (since 2026-09-29). `h_out − h_in`: what the block *adds*, not what it outputs. `contrib_var_ratio` ≈ 0 = the block adds nothing batch-varying (dead or bypassed — the residual carries the stream past it) even when every output gauge reads healthy. `contrib_chorus` = dimensionality of the addition; blank/`null` = rank-1 (soloist) or dust, not a rich transformation. |
+| `drive_gain`, `drive_ref`, `drive_dev`, `drive_duty`, `drive_gain_mean_fired`, `drive_fires`, `drive_calls` | Surprise-drive gating: gain, reference, deviation, duty (fraction of steps the drive fired), and cumulative firing counters. |
 
 > **Consumer note:** A typical line has top-level + `light` + `substrate`. `deep`
 > appears on the deep cadence only. On a step that is a multiple of *both* cadence
