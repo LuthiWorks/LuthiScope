@@ -302,10 +302,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.mount("/vendor", StaticFiles(directory=FRONTEND_DIR / "vendor"), name="vendor")
     if (FRONTEND_DIR / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
-
-    @app.get("/app.js")
-    def app_js():
-        return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
+    if (FRONTEND_DIR / "js").is_dir():
+        app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
     @app.get("/styles.css")
     def styles():
