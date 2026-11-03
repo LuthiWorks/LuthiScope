@@ -1,6 +1,6 @@
 # LuthiScope
 
-> **"You cannot steward what you cannot see."**
+> **"Safety starts with us."**
 
 **LuthiScope** is the real-time observation and control console for the Luthi
 living-weights model — during training, and during cognition. It is the part of
