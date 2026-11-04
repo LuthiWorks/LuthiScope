@@ -106,5 +106,6 @@ Packaged desktop app: `pyinstaller LuthiScope.spec` → `dist/LuthiScope.exe` (s
 
 ## License
 
-Hippocratic License 3.0 — consistent with the LuthiWorks ecosystem. See
-[`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
+
+We chose a permissive license so other researchers can build on and improve this work. This isn't a condition of the license and we can't enforce it, but we ask that you not use this work for military or surveillance activities, to make money, for forced labor, or in ways that contribute to ecocide.
