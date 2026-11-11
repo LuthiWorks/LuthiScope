@@ -18,10 +18,17 @@ class Settings:
     host: str
     port: int
     registry: Path  # fixed handshake file the trainer writes its active run dirs to
+    lens_dir: Path | None = None  # workspace-lens readings; default <home>/lens
 
     @property
     def db_path(self) -> Path:
         return self.home / "luthiscope.sqlite"
+
+    @property
+    def lens_root(self) -> Path:
+        """Where the workspace-lens reader writes and the Workspace window
+        reads. LuthiScope's own territory, never a producer's run dir."""
+        return self.lens_dir if self.lens_dir is not None else self.home / "lens"
 
 
 def _config_json_path(home: Path) -> Path:
@@ -83,4 +90,5 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         host=e.get("LUTHISCOPE_HOST", "127.0.0.1"),
         port=int(e.get("LUTHISCOPE_PORT", "8800")),
         registry=Path(e.get("LUTHISCOPE_REGISTRY", default_registry)).expanduser(),
+        lens_dir=Path(e["LUTHISCOPE_LENS_DIR"]).expanduser() if e.get("LUTHISCOPE_LENS_DIR") else None,
     )

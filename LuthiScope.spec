@@ -72,7 +72,11 @@ a = Analysis(
     hiddenimports=hidden + extra_hidden,
     hookspath=[],
     runtime_hooks=[],
-    excludes=[],
+    # The workspace-lens reader runs as its own process from a Python env
+    # (`python -m luthiscope.lens`); the exe only shows its readings. Keep the
+    # ML stack out even when the build interpreter happens to have it.
+    excludes=["torch", "transformers", "jlens", "huggingface_hub", "safetensors",
+              "tokenizers", "luthiscope.lens.reader", "luthiscope.lens.__main__"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

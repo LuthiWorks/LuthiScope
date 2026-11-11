@@ -2573,6 +2573,17 @@ async function loadLedger() {
     mount.innerHTML = html + "</table>";
   }
 }
+// Workspace lens (2026-11-11): its own window, never a view inside this one.
+// Native window in the desktop app; a separate browser window otherwise.
+const lensBtn = $("lens-btn");
+if (lensBtn) lensBtn.onclick = async () => {
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.open_lens_window) {
+    try { if (await api.open_lens_window()) return; } catch (e) {}
+  }
+  const w = window.open("/lens", "luthiscope-lens", "width=1240,height=860");
+  if (w) w.focus();
+};
 const ledgerBtn = $("ledger-btn");
 if (ledgerBtn) ledgerBtn.onclick = () => setLedgerMode(!ledgerMode);
 

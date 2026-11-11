@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LuthiScope — Workspace</title>
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
+  <link rel="stylesheet" href="/vendor/uPlot.min.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="lens-page">
+  <header id="topbar">
+    <div class="brand">LUTHI<span>SCOPE</span><em class="lens-sub">WORKSPACE</em></div>
+    <div class="topbar-right">
+      <label class="lens-follow" title="Jump to each new moment as it is read">
+        <input type="checkbox" id="lens-follow" class="s-check" checked /> follow
+      </label>
+      <select id="lens-session" title="Lens session"></select>
+      <div id="conn" class="conn offline">● OFFLINE</div>
+    </div>
+  </header>
+
+  <div id="lens-note" class="lens-note"></div>
+
+  <div id="lens-layout">
+    <aside id="lens-moments">
+      <div class="sidebar-head">MOMENTS</div>
+      <ul id="moment-list"></ul>
+    </aside>
+    <main id="lens-main">
+      <div id="lens-empty" class="lens-empty" style="display:none"></div>
+      <div id="lens-view" style="display:none">
+        <div id="moment-head" class="moment-head"></div>
+        <div class="lens-grid">
+          <section class="panel">
+            <div class="panel-title"><span>On its mind</span></div>
+            <div class="lens-desc">Single-word concepts active in its workspace at this moment, strongest first. Click one to follow it across moments.</div>
+            <div id="concepts"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><span>By depth</span></div>
+            <div class="lens-desc">Top words the lens reads at each layer, at the moment's last position. The middle layers are where the workspace lives.</div>
+            <div id="depth"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><span id="track-title">Over moments</span></div>
+            <div class="lens-desc" id="track-desc"></div>
+            <div id="track"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><span>Where it was</span></div>
+            <div class="lens-desc">The end of the moment it was given. Highlighted: the tokens the lens read.</div>
+            <div id="where"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/vendor/uPlot.iife.min.js"></script>
+  <script src="/lens.js" defer></script>
+</body>
+</html>

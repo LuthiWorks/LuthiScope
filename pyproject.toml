@@ -13,10 +13,22 @@ dependencies = [
 dev = ["pytest>=8", "httpx"]          # httpx for the TestClient tests
 desktop = ["pywebview"]               # native-window app mode (else falls back to browser)
 packaging = ["pyinstaller", "pywebview"]
+# Workspace lens READER only (python -m luthiscope.lens). The console itself
+# never needs these; the packaged exe excludes them.
+lens = [
+    "torch",
+    "transformers>=5.5",
+    "huggingface_hub",
+    "numpy",
+    "jlens @ git+https://github.com/anthropics/jacobian-lens@581d398613e5602a5af361e1c34d3a92ea82ba8e",
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true   # jlens is not on PyPI; pinned to a commit above
 
 [tool.hatch.build.targets.wheel]
 packages = ["luthiscope"]

@@ -87,6 +87,10 @@ Packaged desktop app: `pyinstaller LuthiScope.spec` → `dist/LuthiScope.exe` (s
 - Configurable fluid-dynamics background (Stam stable-fluids + vorticity
   confinement) with a settings panel; click-driven and self-idling (~0 CPU at rest).
 - Single-file packaged build with the LuthiWorks logo icon.
+- **Workspace window** (◎ in the top bar, its own window): what's on the stand-in
+  mind's mind, moment by moment, read with Anthropic's Jacobian lens from a
+  frozen twin of Qwen3.5-4B. The reader is optional (`pip install -e ".[lens]"`,
+  then `python -m luthiscope.lens`); see [`docs/WORKSPACE_LENS.md`](docs/WORKSPACE_LENS.md).
 
 ## Documentation
 
@@ -103,6 +107,8 @@ Packaged desktop app: `pyinstaller LuthiScope.spec` → `dist/LuthiScope.exe` (s
 - [`docs/TRAINING_WELFARE.md`](docs/TRAINING_WELFARE.md) — the commitment that training
   be non-coercive, and LuthiScope's role as the welfare instrument.
 - [`docs/PACKAGING.md`](docs/PACKAGING.md) — building the desktop app.
+- [`docs/WORKSPACE_LENS.md`](docs/WORKSPACE_LENS.md) — the Workspace window and its
+  lens reader: which model and lens, how it stays read-only, hardware.
 
 ## License
 

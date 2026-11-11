@@ -115,9 +115,33 @@ def run_app() -> None:
 
         _log(settings, "webview imported OK -- native window path")
 
+        lens_win: dict = {}
+
         class _Api:
             """JS bridge: window.pywebview.api.pick_folder() -> native
             folder dialog (Settings -> Data Source, 2026-07-19)."""
+
+            def open_lens_window(self):
+                """The Workspace lens gets its own native window (Brian,
+                2026-11-11: "It should be its own separate window"). One at
+                a time: a second click brings the open one forward."""
+                try:
+                    win = lens_win.get("w")
+                    if win is not None and win in webview.windows:
+                        try:
+                            win.restore()
+                            win.show()
+                        except Exception:
+                            pass
+                        return True
+                    lens_win["w"] = webview.create_window(
+                        "LuthiScope — Workspace", url + "/lens",
+                        width=1240, height=860,
+                    )
+                    return True
+                except Exception as e:  # noqa: BLE001
+                    _log(settings, "lens window failed: " + str(e))
+                    return False
 
             def pick_folder(self):
                 try:

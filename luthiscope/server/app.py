@@ -7,7 +7,11 @@ behind a separate, explicit API that does not exist yet.)
 - REST  GET /api/streams                      -> discovered streams + record counts
 - REST  GET /api/streams/{id}/records         -> full history (raw records, ordered)
 - WS    /ws/streams/{id}                       -> live: records appended after connect
+- REST  GET /api/lens                          -> workspace-lens sessions (+ reader installed?)
+- REST  GET /api/lens/sessions/{id}/records    -> one session's readings
+- WS    /ws/lens/{id}                          -> live: readings appended after connect
 - GET   /                                      -> the frontend; /vendor, /static mounts
+- GET   /lens                                  -> the Workspace window (its own page)
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ else:
 LIVE_POLL_SECONDS = 0.5
 LIVE_STALE_SECONDS = 30.0   # liveness floor: files younger than this are always "live"
 LIVE_GAP_MULT = 2.5         # tolerate up to this many × the run's own worst recent write gap
+LENS_LIVE_SECONDS = 120.0   # a lens session is "live" if read within this (the twin can be slow on CPU)
 
 
 def _file_age(path: Path) -> float | None:
@@ -277,6 +282,93 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"id": s.stream_id, "steps": steps,
                 "blocks": _scrub_nonfinite(blocks)}
 
+    # -- workspace lens (2026-11-11): its own window, same read-only rule --
+    # Readings are written by the separate reader (python -m luthiscope.lens)
+    # into LuthiScope's own home; a producer that ever emits its own
+    # workspace_lens.jsonl inside a run dir is picked up too. The server only
+    # reads these files. Session ids are looked up in a discovered map, never
+    # turned into paths, so an id cannot reach outside these two roots.
+
+    def lens_sessions() -> dict[str, dict]:
+        from luthiscope.lens import LENS_FILENAME
+
+        found: dict[str, dict] = {}
+        roots = [("", settings.lens_root), ("run:", runs_dir_state["path"])]
+        for prefix, root in roots:
+            try:
+                subdirs = [d for d in root.iterdir() if d.is_dir()]
+            except OSError:
+                continue
+            for d in subdirs:
+                f = d / LENS_FILENAME
+                if f.is_file():
+                    found[prefix + d.name] = {"dir": d, "path": f}
+        return found
+
+    def lens_session_entry(sid: str, info: dict) -> dict:
+        from luthiscope.lens.records import read_session_meta
+
+        age = _file_age(info["path"])
+        try:
+            with open(info["path"], "rb") as fh:
+                n = sum(1 for line in fh if line.strip())
+        except OSError:
+            n = 0
+        return {
+            "id": sid,
+            "n_moments": n,
+            "mtime": info["path"].stat().st_mtime if age is not None else None,
+            "last_write_age": age,
+            "live": age is not None and age < LENS_LIVE_SECONDS,
+            "meta": read_session_meta(info["dir"]),
+        }
+
+    @app.get("/api/lens")
+    def lens_overview():
+        import importlib.util as ilu
+
+        reader_missing = [m for m in ("torch", "transformers", "jlens")
+                          if ilu.find_spec(m) is None]
+        entries = [lens_session_entry(k, v) for k, v in lens_sessions().items()]
+        entries.sort(key=lambda e: (-(e["mtime"] or 0), e["id"]))
+        return {
+            "lens_dir": str(settings.lens_root),
+            "reader_installed": not reader_missing,
+            "reader_missing": reader_missing,
+            "sessions": entries,
+        }
+
+    @app.get("/api/lens/sessions/{session_id:path}/records")
+    def lens_records(session_id: str):
+        from luthiscope.lens.records import read_session_meta
+
+        info = lens_sessions().get(session_id)
+        if info is None:
+            raise HTTPException(status_code=404, detail=f"unknown lens session: {session_id}")
+        recs = JsonlFollower(info["path"]).read_all()
+        return {"id": session_id, "meta": read_session_meta(info["dir"]),
+                "records": _scrub_nonfinite(recs)}
+
+    @app.websocket("/ws/lens/{session_id:path}")
+    async def lens_live(websocket: WebSocket, session_id: str):
+        await websocket.accept()
+        info = lens_sessions().get(session_id)
+        if info is None:
+            await websocket.close(code=1008)
+            return
+        follower = JsonlFollower(info["path"])
+        follower.seek_to_end()
+        try:
+            while True:
+                new = follower.read_new()
+                if new:
+                    await websocket.send_json({"records": _scrub_nonfinite(new)})
+                await asyncio.sleep(LIVE_POLL_SECONDS)
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            await websocket.close(code=1011)
+
     @app.websocket("/ws/streams/{stream_id:path}")
     async def live(websocket: WebSocket, stream_id: str):
         await websocket.accept()
@@ -314,6 +406,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/")
     def index():
         return FileResponse(FRONTEND_DIR / "index.html")
+
+    @app.get("/lens")
+    def lens_window():
+        return FileResponse(FRONTEND_DIR / "lens.html")
+
+    @app.get("/lens.js")
+    def lens_js():
+        return FileResponse(FRONTEND_DIR / "lens.js", media_type="application/javascript")
 
     app.state.settings = settings
     return app
