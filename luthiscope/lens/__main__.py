@@ -95,9 +95,15 @@ def main(argv: list[str] | None = None) -> int:
     else:
         default_session = time.strftime("prompt_%Y%m%d_%H%M%S")
     session = args.session or default_session
-    writer = SessionWriter(settings.lens_root / session)
 
-    reader = WorkspaceReader(cfg)
+    try:
+        reader = WorkspaceReader(cfg)
+    except OSError as e:
+        print(f"Couldn't load the twin or its lens: {e}\n"
+              "The first run downloads them from Hugging Face (about 9 GB for "
+              "Qwen3.5-4B), so it needs internet access.", file=sys.stderr)
+        return 3
+    writer = SessionWriter(settings.lens_root / session)
     writer.write_meta(reader.session_meta("moments" if args.moments else "prompt"))
     print(f"reading layers {reader.layers}; writing to {writer.path}")
 

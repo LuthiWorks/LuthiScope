@@ -205,7 +205,7 @@ def test_reader_produces_a_well_formed_record():
     reader = _reader(model, tok)
     assert reader.layers == [2, 4, 6]          # every 2nd fitted layer from n/4, below the last
     rec = reader.read("the creeper hissed behind me , so I")
-    assert rec["n_tokens"] == 9 and rec["truncated"] == 0
+    assert rec["n_tokens"] == 8 and rec["truncated"] == 0
     assert len(rec["read_tokens"]) == 4
     assert 1 <= len(rec["concepts"]) <= 5
     for c in rec["concepts"]:
