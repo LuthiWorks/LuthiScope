@@ -106,6 +106,26 @@ Sanctuary's `--llm-thinking`. `--layers`, `--positions`, `--max-tokens`,
 `--device`, `--dtype` override the defaults; `.env.example` lists the
 environment equivalents.
 
+### First run on Brian's PC (Windows, CPU)
+
+A one-time check that the twin loads and the lens reads. Keep the lens in its
+own Python environment so the app's build environment (`.venv`) stays lean.
+In PowerShell, in the LuthiScope folder:
+
+1. Get the latest code: `git pull`
+2. Make the lens environment: `py -3.10 -m venv .venv-lens`
+3. Install the reader (needs git on the PATH for jlens):
+   `.venv-lens\Scripts\python -m pip install -e ".[lens]"`
+4. Take one reading. The first time it downloads about 9.5 GB and needs
+   roughly 11 GB of free RAM:
+   `.venv-lens\Scripts\python -m luthiscope.lens --prompt "Fact: The currency used in the country shaped like a boot is"`
+5. It prints `moment 1: ...` with the strongest concepts. The lens paper's
+   own example: words like Italy, lira or euro in that list mean it's reading.
+6. Open LuthiScope, press ◎, and pick the `prompt_...` session. The same
+   concepts should be in "On its mind".
+
+If a step fails, the last few lines it printed say why.
+
 ### Hardware
 
 bf16 Qwen3.5-4B needs about 9–10 GB of memory wherever it runs.
